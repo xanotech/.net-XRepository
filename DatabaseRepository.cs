@@ -12,6 +12,8 @@ namespace Xanotech.Repository {
     public class DatabaseRepository : IRepository {
 
         private string connectionName;
+        [ThreadStatic]
+        private static Cache<Tuple<Type, long?>, object> idCache;
         private Cache<Type, Mirror> mirrorCache;
         private Cache<Type, IEnumerable<Reference>> referenceCache;
         private Cache<string, DataTable> schemaCache;
@@ -452,8 +454,23 @@ namespace Xanotech.Repository {
 
 
         protected IEnumerable<T> Get<T>(string sql) where T : new() {
+            bool wasNull = idCache == null;
+            if (wasNull)
+                idCache = new Cache<Tuple<Type,long?>,object>();
+
             var objs = CreateObjects<T>(connectionName, sql);
+            foreach (var obj in objs) {
+                var identifiable = obj as IIdentifiable;
+                if (identifiable == null) 
+                    continue;
+
+                idCache.GetValue(new Tuple<Type, long?>(obj.GetType(), identifiable.Id), () => obj);
+            } // end foreach
             SetReferences(objs);
+
+            if (wasNull)
+                idCache = null;
+
             return objs;
         } // end method
 
@@ -500,7 +517,7 @@ namespace Xanotech.Repository {
                     var reference = new Reference();
                     reference.Property = property;
                     reference.ReferencedType = enumType;
-                    reference.ReferencingType = type;
+                    reference.ReferencingType = property.DeclaringType;
                     references.Add(reference);
                 } else {
                     var tableNames = tableNameCache.GetValue(property.PropertyType);
@@ -659,7 +676,8 @@ namespace Xanotech.Repository {
                     if (id == null)
                         continue;
 
-                    object referenceObj = ReflectedGet(reference.ReferencedType, id);
+                    object referenceObj = idCache.GetValue(new Tuple<Type, long?>(reference.ReferencedType, id),
+                        () => ReflectedGet(reference.ReferencedType, id));
                     reference.Property.SetValue(obj, referenceObj, null);
                 } // end if-else
             } // end foreach
