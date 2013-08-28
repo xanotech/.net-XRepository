@@ -179,7 +179,7 @@ namespace Xanotech.Repository {
 
         public void Delete(IIdentifiable obj) {
             //if (obj.Broker == null) obj.Broker = this;
-            var tableNames = tableNameCache.GetValue(obj.GetType());
+            var tableNames = tableNameCache[obj.GetType()];
             foreach (var table in tableNames)
                 DeleteObjectFromTable(obj, table);
         } // end method
@@ -399,7 +399,7 @@ namespace Xanotech.Repository {
 
         public IEnumerable<T> Get<T>(IEnumerable<Criterion> criteria,
             IEnumerable<string> orderColumns) where T : new() {
-            var tableNames = tableNameCache.GetValue(typeof(T));
+            var tableNames = tableNameCache[typeof(T)];
             var sql = FormatSelectQuery(tableNames, criteria, orderColumns);
             return Get<T>(sql);
         } // end method
@@ -478,7 +478,7 @@ namespace Xanotech.Repository {
 
         private IDictionary<string, string> GetFieldValues(object obj, string tableName) {
             var values = new Dictionary<string, string>();
-            var schema = schemaCache.GetValue(tableName);
+            var schema = schemaCache[tableName];
             if (schema == null)
                 return values;
 
@@ -510,8 +510,8 @@ namespace Xanotech.Repository {
                 if (property.PropertyType.IsGenericType &&
                     property.PropertyType.GetGenericTypeDefinition() == typeof(IEnumerable<>)) {
                     var enumType = property.PropertyType.GetGenericArguments()[0];
-                    var tableNames = tableNameCache.GetValue(enumType);
-                    if (!tableNames.Any(tn => schemaCache.GetValue(tn) != null))
+                    var tableNames = tableNameCache[enumType];
+                    if (!tableNames.Any(tn => schemaCache[tn] != null))
                         continue;
 
                     var reference = new Reference();
@@ -520,8 +520,8 @@ namespace Xanotech.Repository {
                     reference.ReferencingType = property.DeclaringType;
                     references.Add(reference);
                 } else {
-                    var tableNames = tableNameCache.GetValue(property.PropertyType);
-                    if (!tableNames.Any(tn => schemaCache.GetValue(tn) != null))
+                    var tableNames = tableNameCache[property.PropertyType];
+                    if (!tableNames.Any(tn => schemaCache[tn] != null))
                         continue;
 
                     var idProp = properties.FirstOrDefault(p => p.Name == property.Name + "Id");
@@ -542,7 +542,7 @@ namespace Xanotech.Repository {
 
         private string GetTableForColumn(IEnumerable<string> tableNames, string column) {
             foreach (string tableName in tableNames) {
-                var schema = schemaCache.GetValue(tableName);
+                var schema = schemaCache[tableName];
                 for (int r = 0; r < schema.Rows.Count; r++) {
                     var name = (string)schema.Rows[r][0];
                     if (column == name)
@@ -558,7 +558,7 @@ namespace Xanotech.Repository {
             var tableNameList = new List<string>();
             while (type != typeof(object)) {
                 var tableName = type.Name;
-                var schema = schemaCache.GetValue(tableName);
+                var schema = schemaCache[tableName];
                 if (schema != null)
                     tableNameList.Add(tableName);
                 type = type.BaseType;
@@ -626,7 +626,7 @@ namespace Xanotech.Repository {
 
         public void Save(IIdentifiable obj) {
             //obj.Broker = this;
-            var tableNames = tableNameCache.GetValue(obj.GetType());
+            var tableNames = tableNameCache[obj.GetType()];
             foreach (var table in tableNames)
                 SaveObjectToTable(obj, table);
         } // end method

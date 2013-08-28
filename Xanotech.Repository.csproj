@@ -34,11 +34,9 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
-    <Reference Include="System.Xml.Linq" />
-    <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
-    <Reference Include="System.Xml" />
+    <Reference Include="System.XML" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="DatabaseRepository.cs" />
@@ -54,6 +52,7 @@
     <ProjectReference Include="..\Xanotech.Tools\Xanotech.Tools.csproj">
       <Project>{3EEC986C-679B-4CFE-A858-C10A2BE88B3A}</Project>
       <Name>Xanotech.Tools</Name>
+      <Private>False</Private>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
