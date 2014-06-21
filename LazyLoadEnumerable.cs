@@ -22,7 +22,7 @@ namespace Xanotech.Repository {
             if (Criterion == null || Repository == null)
                 data = new List<T>();
             else
-                data = new List<T>(Repository.Get<T>(Criterion));
+                data = new List<T>(Repository.Find<T>(Criterion));
             return data.GetEnumerator();
         } // end method
 

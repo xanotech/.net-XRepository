@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Data;
 using Xanotech.Tools;
@@ -9,18 +10,45 @@ namespace Xanotech.Repository {
     /// </summary>
     public class Sequencer {
 
-        private string connectionName;
+        private Func<IDbConnection> openConnectionFunc;
         private IDictionary<string, long> sequences;
+
+
+
+        public Sequencer(Func<IDbConnection> openConnectionFunc) {
+            this.openConnectionFunc = openConnectionFunc;
+            this.sequences = new Dictionary<string, long>();
+        } // end constructor
 
 
 
         /// <summary>
         ///   Constructs a Sequencer using the specified connection.
+        ///   <param name="connectionStringName">
+        ///     The name of the connection string as definied in the App.config or Web.config.
+        ///   </param>
         /// </summary>
-        public Sequencer(string connection) {
-            connectionName = connection;
-            sequences = new Dictionary<string, long>();
-        } // End constructor
+        public Sequencer(string connectionStringName) :
+            this(() => { return DataTool.OpenConnection(connectionStringName); }) {
+        } // end constructor
+
+
+
+        public static Sequencer Create<T>(string connectionString) where T : IDbConnection, new() {
+            return new Sequencer(() => { return DataTool.OpenConnection<T>(connectionString); });
+        } // end method
+
+
+
+        public static Sequencer Create(Func<IDbConnection> openConnectionFunc) {
+            return new Sequencer(openConnectionFunc);
+        } // end method
+
+
+
+        public static Sequencer Create(string connectionStringName) {
+            return new Sequencer(connectionStringName);
+        } // end method
 
 
 
@@ -41,7 +69,7 @@ namespace Xanotech.Repository {
         private long GetMaxValue(string table, string field) {
             long max;
             string sql = "SELECT MAX(" + field + ") FROM " + table;
-            using (IDbConnection con = DataTool.OpenConnection(connectionName))
+            using (IDbConnection con = openConnectionFunc())
             using (IDbCommand cmd = con.CreateCommand()) {
                 cmd.CommandText = sql;
                 object result = cmd.ExecuteScalar();
