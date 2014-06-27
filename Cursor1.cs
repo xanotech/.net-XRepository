@@ -9,10 +9,10 @@ namespace Xanotech.Repository {
         internal IEnumerable<Criterion> criteria;
         private IList<T> data;
         private Func<IEnumerable<Criterion>, Cursor<T>, IEnumerable<T>> fetch;
-        private long? limit;
+        private long? limitValue;
         private IRepository repository;
-        private long? skip;
-        private IDictionary<string, int> sort;
+        private long? skipValue;
+        private IDictionary<string, int> sortValue;
 
 
 
@@ -52,13 +52,18 @@ namespace Xanotech.Repository {
 
         
 
-        public long? Limit {
-            get { return limit; }
-            set {
-                data = null;
-                limit = value;
-            }
+        public long? limit {
+            get { return limitValue; }
+            set { Limit(value); }
         } // end property
+
+
+
+        public Cursor<T> Limit(long? rows) {
+            data = null;
+            limitValue = rows;
+            return this;
+        } // end method
 
 
 
@@ -68,23 +73,42 @@ namespace Xanotech.Repository {
 
 
 
-        public long? Skip {
-            get { return skip; }
-            set {
-                data = null;
-                skip = value;
-            }
+        public long? skip {
+            get { return skipValue; }
+            set { Skip(value); }
         } // end property
 
 
 
-        public IDictionary<string, int> Sort {
-            get { return sort; }
-            set {
-                data = null;
-                sort = value;
-            }
+        public Cursor<T> Skip(long? rows) {
+            data = null;
+            skipValue = rows;
+            return this;
+        } // end method
+
+
+
+        public IDictionary<string, int> sort {
+            get { return sortValue; }
+            set { Sort(value); }
         } // end property
+
+
+
+        public Cursor<T> Sort(IDictionary<string, int> sortBy) {
+            data = null;
+            sortValue = sortBy;
+            return this;
+        } // end method
+
+
+
+        public Cursor<T> Sort(IEnumerable<string> sortBy) {
+            var sortByDictionary = new Dictionary<string, int>();
+            foreach (var column in sortBy)
+                sortByDictionary[column] = 1;
+            return Sort(sortByDictionary);
+        } // end method
 
     } // end class
 } // end namespace

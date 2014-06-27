@@ -19,8 +19,8 @@ namespace Xanotech.Repository {
             OffsetFetchFirst // SQL Server: SELECT * FROM SomeTable ORDER BY SomeColumn OFFSET 20 ROWS FETCH FIRST 10 ROWS ONLY
         } // end enum
 
-        // The idCache is used exclusively when retrieving objects from the database.
-        // It is ThreadStatic meaning it exists per thread using the repository.
+        // The idCache is used exclusively when retrieving objects from
+        // the database and only exists for the current thread.
         [ThreadStatic]
         private static Cache<Tuple<Type, long?>, object> idCache;
 
@@ -165,7 +165,6 @@ namespace Xanotech.Repository {
             using (var con = openConnectionFunc())
             using (var cmd = con.CreateCommand()) {
                 cmd.CommandText = sql;
-                Log(sql);
                 object result = cmd.ExecuteScalar();
                 return result as long? ?? result as int? ?? 0;
             } // end using
@@ -249,8 +248,8 @@ namespace Xanotech.Repository {
             using (var con = openConnectionFunc())
             using (var cmd = con.CreateCommand()) {
                 var recordNum = 0;
-                var recordStart = cursor.Skip ?? 0;
-                var recordStop = cursor.Limit != null ? recordStart + cursor.Limit : null;
+                var recordStart = cursor.skip ?? 0;
+                var recordStop = cursor.limit != null ? recordStart + cursor.limit : null;
 
                 cmd.CommandText = sql;
                 Log(sql);
@@ -528,7 +527,7 @@ namespace Xanotech.Repository {
 
         private string FormatPagingClause<T>(string tableName, Cursor<T> cursor)
             where T : new() {
-            if (cursor.Limit == null && cursor.Skip == null)
+            if (cursor.limit == null && cursor.skip == null)
                 return null;
 
             var paging = GetPagingMechanism(tableName);
@@ -538,22 +537,22 @@ namespace Xanotech.Repository {
             string pagingClause = null;
             if (paging == PagingMechanism.LimitOffset) {
                 var parts = new List<string>(2);
-                if (cursor.Limit != null)
-                    parts.Add("LIMIT " + cursor.Limit);
-                if (cursor.Skip != null)
-                    parts.Add("OFFSET " + cursor.Skip);
+                if (cursor.limit != null)
+                    parts.Add("LIMIT " + cursor.limit);
+                if (cursor.skip != null)
+                    parts.Add("OFFSET " + cursor.skip);
                 pagingClause = string.Join(" ", parts);
             } // end if
 
             if (paging == PagingMechanism.OffsetFetchFirst) {
                 var parts = new List<string>(3);
-                if (cursor.Sort == null || cursor.Sort.Count == 0) {
+                if (cursor.sort == null || cursor.sort.Count == 0) {
                     var firstColumn = schemaTableCache[tableName].Rows[0][0];
                     parts.Add("ORDER BY " + firstColumn);
                 } // end if
-                parts.Add("OFFSET " + cursor.Skip ?? 0 + " ROWS");
-                if (cursor.Limit != null)
-                    parts.Add("FETCH FIRST " + cursor.Limit + " ROWS ONLY");
+                parts.Add("OFFSET " + cursor.skip ?? 0 + " ROWS");
+                if (cursor.limit != null)
+                    parts.Add("FETCH FIRST " + cursor.limit + " ROWS ONLY");
                 pagingClause = string.Join(" ", parts);
             } // end if
 
@@ -571,7 +570,7 @@ namespace Xanotech.Repository {
             if (selectCriteria != null)
                 sql += Environment.NewLine + "WHERE " + selectCriteria;
 
-            var selectOrderColumns = FormatOrderClause(tableNames, cursor.Sort);
+            var selectOrderColumns = FormatOrderClause(tableNames, cursor.sort);
             if (selectOrderColumns != null)
                 sql += Environment.NewLine + "ORDER BY " + selectOrderColumns;
 

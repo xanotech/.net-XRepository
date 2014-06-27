@@ -1,8 +1,9 @@
-using System.Collections.Generic;
-using System.Text;
-using Xanotech.Tools;
-using System.Reflection;
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using Xanotech.Tools;
 
 namespace Xanotech.Repository {
     public class Criterion {
@@ -118,11 +119,31 @@ namespace Xanotech.Repository {
 
 
         public override string ToString() {
-            var whereClause = new StringBuilder();
-            whereClause.Append(Name);
-            whereClause.Append(' ' + ConvertOperationToString(Operation) + ' ');
-            whereClause.Append(Value.ToSqlString());
-            return whereClause.ToString();
+            var opStr = ConvertOperationToString(Operation);
+            if (opStr == "!=")
+                opStr = "<>";
+
+            var valStr = Value.ToSqlString();
+            var enumerable = Value as IEnumerable;
+            if (valStr.StartsWith("(") && valStr.EndsWith(")")) {
+                switch (Operation) {
+                    case OperationType.GreaterThan:
+                    case OperationType.GreaterThanOrEqualTo:
+                        valStr = enumerable.FindMin().ToSqlString();
+                        break;
+                    case OperationType.LessThan:
+                    case OperationType.LessThanOrEqualTo:
+                        valStr = enumerable.FindMax().ToSqlString();
+                        break;
+                    case OperationType.NotEqualTo:
+                        opStr = "NOT IN";
+                        break;
+                    default:
+                        opStr = "IN";
+                        break;
+                } // end switch
+            } // end else
+            return Name + ' ' + opStr + ' ' + valStr;
         } // end method
 
     } // end class

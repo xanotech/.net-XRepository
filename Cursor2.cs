@@ -52,18 +52,13 @@ namespace Xanotech.Repository {
 
         
 
-        public long? limit {
+        public long? Limit {
             get { return limitValue; }
-            set { Limit(value); }
+            set {
+                data = null;
+                limitValue = value;
+            }
         } // end property
-
-
-
-        public Cursor<T> Limit(long? rows) {
-            data = null;
-            limitValue = rows;
-            return this;
-        } // end method
 
 
 
@@ -73,42 +68,23 @@ namespace Xanotech.Repository {
 
 
 
-        public long? skip {
+        public long? Skip {
             get { return skipValue; }
-            set { Skip(value); }
+            set {
+                data = null;
+                skipValue = value;
+            }
         } // end property
 
 
 
-        public Cursor<T> Skip(long? rows) {
-            data = null;
-            skipValue = rows;
-            return this;
-        } // end method
-
-
-
-        public IDictionary<string, int> sort {
+        public IDictionary<string, int> Sort {
             get { return sortValue; }
-            set { Sort(value); }
+            set {
+                data = null;
+                sortValue = value;
+            }
         } // end property
-
-
-
-        public Cursor<T> Sort(IDictionary<string, int> sortBy) {
-            data = null;
-            sort = sortBy;
-            return this;
-        } // end method
-
-
-
-        public Cursor<T> Sort(IEnumerable<string> sortBy) {
-            var sortByDictionary = new Dictionary<string, int>();
-            foreach (var column in sortBy)
-                sortByDictionary[column] = 1;
-            return Sort(sortByDictionary);
-        } // end method
 
     } // end class
 } // end namespace

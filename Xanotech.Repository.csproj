@@ -39,12 +39,6 @@
     <Reference Include="System.XML" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Cursor.cs">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="CursorTool.cs">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="DatabaseRepository.cs" />
     <Compile Include="IRepository.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -62,6 +56,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />
+    <Compile Include="Cursor1.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
