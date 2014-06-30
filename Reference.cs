@@ -1,6 +1,6 @@
-﻿using System.Reflection;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Reflection;
 
 namespace Xanotech.Repository {
     class Reference {

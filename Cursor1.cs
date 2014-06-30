@@ -6,11 +6,20 @@ using Xanotech.Tools;
 namespace Xanotech.Repository {
     public class Cursor<T> : IEnumerable<T> where T : new() {
 
+        // Used by the spawning repository for populating data.
         internal IEnumerable<Criterion> criteria;
+        internal DatabaseInfo.PagingMechanism? pagingMechanism;
+
+        // data and fetch are closely related.  data is essentially initialized
+        // the the results of fetch whenever results need to be pulled.
         private IList<T> data;
         private Func<IEnumerable<Criterion>, Cursor<T>, IEnumerable<T>> fetch;
+
+        private IRepository repository; // Only used for Count.
+
+        // The following values hold the underlying values for
+        // the limit, skip, and sort methods / properties.
         private long? limitValue;
-        private IRepository repository;
         private long? skipValue;
         private IDictionary<string, int> sortValue;
 

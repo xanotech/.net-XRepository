@@ -39,7 +39,9 @@
     <Reference Include="System.XML" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DatabaseInfoCache.cs" />
     <Compile Include="DatabaseRepository.cs" />
+    <Compile Include="DatabaseInfo.cs" />
     <Compile Include="IRepository.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Criterion.cs" />
