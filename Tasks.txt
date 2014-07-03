@@ -1,0 +1,119 @@
+o Change inline values to parameters
+o Add Connection closing tracking in order to report unclosed connections
+o Reuse commands when updating, inserting, or deleting collections of objects
+o Test DatabaseRepository
+    - Test Large Array Criteria values (IN statement)
+    - Test Various Criteria Operators
+o Refactor DatabaseRepository code
+    - Determine which columns are mapped (auto or otherwise) and build select instead of SELECT *
+    - Improve Auto Mapping to look for property name based on name of foreign key instead of just "Id".  Also, have it look for both root table name + key name and just the key name.  Rule out any types with more than one Primary Key Column.
+    - Improve Reference Initialization (options follow)...
+        . Allow for "No Reference Initialization" when calling Find
+        . Pull related objects in bulk based on primary keys instead of singple pulls
+        . Create Join method in Cursor that pulls and relates related objects
+    - Create 2 more Sequencers
+        . TableSequencer (uses table with database locking for ids)
+        . WebSequencer (uses external web site which will be backed by TableSequencer)
+    - Allow for an external Sequencer to be set
+    - Mapping
+    - Multiple Criteria arrays: Find(IEnumerable<IEnumerable<Criteria>>) (OR functionality)
+    - Implement Producer / Consumer for Reads
+o Test DatabaseRepository
+    - Test Improved Auto Mapping
+    - Test Improved Reference Initialization
+    - Test Mapping
+    - Test new Sequencers
+    - Test Giant OR clause (huge criteria[] array)
+o Setup Databases...
+    - SQL Server
+    - SQL Server Compact
+    - SQL Server Express
+    - SQLite
+    - MS Access
+    - PostgreSQL
+    - MySQL
+    - Oracle (express)
+    - Informix
+    - Sybase
+    - DB2
+    - Teradata
+o Restructure DatabaseRepositoryTest to work on multiple databases
+    - Test SQL Server
+    - Test SQL Server Compact
+    - Test SQL Server Express
+    - Test SQLite
+    - Test MS Access
+    - Test PostgreSQL
+    - Test MySQL
+    - Test Oracle (express)
+    - Test Informix
+    - Test Sybase
+    - Test DB2
+    - Test Teradata
+o Rename / rebrand Xanotech.Repository as nRepository
+o Rename / rebrand Xanotech.Tools as xTools
+o Move RepositoryController from Xanotech.Web to nRepository
+o Merge Xanotech.Web into xTools
+o Create RepositoryController and jsRepository.js
+    - Split out query logic common to both DatabaseRepository and RepositoryController
+o Change BackgroundTaskQueue to use BlockingCollection
+o Create a generic UserController based on wheresmylinks user code
+o Create an ajax / javascript error handler (that integrates with other tools)
+
+
+xRepository API...
+count(Prototype || tablename, [criteriaObject]):
+    returns the number of objects matching the criteria
+create(Prototype || tablename): returns a new object (with null properties based on table)
+find(Prototype || tablename, [criteriaObject]): returns a cursor
+    count([applySkipLimit]) - if applySkipLimit, counts number of records that will
+        be returned by the cursor.  if not, counts total number of records.
+    forEach(callback)
+    hasNext - tells you if next will return a document (or null)
+    limit(maxObjects)
+    map(callback)
+    next() - gets the next (single) record
+    size() - same as count(true)
+    skip(numToSkip) - number of records to skip before returning results
+    sort(sortObject) - sortObject keys are properties.
+        1 indicates ascending, -1 indicates descending
+    toArray() - returns all records
+findOne(Prototype || tablename, [criteriaObject])
+remove([Prototype || tablename], object or objectArray):
+    object(s) provided must have primary keys specified
+save([Prototype || tablename], object or objectArray):
+    primary keys not present: will assume is new and attempt to autoGenerate key value.
+    primary keys specified:
+        if _repoData is present, it will use this to determine if the object is new or not
+        if _repoData is not present, it will see if there is already a record in the db
+
+
+Generic User Domain
+-------------------
+
+UserSession
+    Id
+    ActivityDate
+    Code
+    UserProfileId
+
+UserRegistration
+    Id
+    Code
+    CreationDate
+    EmailAddress
+    UserProfileId
+
+UserProfile
+    Id
+    Name
+    EmailAddress
+    PasswordHash
+    NavigationCode
+    SearchEngine
+
+UserSetting
+    Id
+    Name
+    Value
+    UserProfileId

@@ -1,8 +1,10 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using Xanotech.Tools;
 
 namespace Xanotech.Repository {
@@ -118,31 +120,98 @@ namespace Xanotech.Repository {
 
 
 
+        private IEnumerable GetValueList() {
+            var enumerable = Value as IEnumerable;
+            var valStr = Value as string;
+            if (valStr != null)
+                enumerable = null;
+            return enumerable;
+        } // end method
+
+
+
+        private string FormatValueList(IEnumerable enumerable, bool useParameters, IDbCommand cmd) {
+            var isAfterFirst = false;
+            var valueCount = 0;
+            var valuesOnLineCount = 0;
+            var sqlStr = new StringBuilder("(");
+            foreach (var value in enumerable) {
+                if (isAfterFirst) {
+                    sqlStr.Append(',');
+                    if (valuesOnLineCount == 8) {
+                        sqlStr.Append(Environment.NewLine);
+                        valuesOnLineCount = 0;
+                    } else
+                        sqlStr.Append(' ');
+                } // end if
+
+                if (useParameters) {
+                    var parameterName = Name + valueCount;
+                    sqlStr.Append('@' + parameterName);
+                    if (cmd != null)
+                        cmd.AddParameter(parameterName, value);
+                } else
+                    sqlStr.Append(value.ToSqlString());
+
+                isAfterFirst = true;
+                valueCount++;
+                valuesOnLineCount++;
+            }
+            sqlStr.Append(")");
+            return sqlStr.ToString();
+        } // end method
+
+
+
         public override string ToString() {
+            return ToString(null, false);
+        } // end method
+
+
+
+        internal string ToString(IDbCommand cmd, bool useParameters) {
             var opStr = ConvertOperationToString(Operation);
             if (opStr == "!=")
                 opStr = "<>";
 
-            var valStr = Value.ToSqlString();
-            var enumerable = Value as IEnumerable;
-            if (valStr.StartsWith("(") && valStr.EndsWith(")")) {
+            var val = Value;
+            var valList = GetValueList();
+            string valStr = null;
+            if (valList != null)
                 switch (Operation) {
+                    case OperationType.EqualTo:
+                    case OperationType.NotEqualTo:
+                        opStr = Operation == OperationType.EqualTo ? "IN" : "NOT IN";
+                        valStr = FormatValueList(valList, useParameters, cmd);
+                        break;
                     case OperationType.GreaterThan:
                     case OperationType.GreaterThanOrEqualTo:
-                        valStr = enumerable.FindMin().ToSqlString();
+                        val = valList.FindMin();
+                        valList = null;
                         break;
                     case OperationType.LessThan:
                     case OperationType.LessThanOrEqualTo:
-                        valStr = enumerable.FindMax().ToSqlString();
-                        break;
-                    case OperationType.NotEqualTo:
-                        opStr = "NOT IN";
-                        break;
-                    default:
-                        opStr = "IN";
+                        val = valList.FindMax();
+                        valList = null;
                         break;
                 } // end switch
-            } // end else
+
+            if (valList == null) {
+                if (val == null) {
+                    if (Operation == OperationType.EqualTo)
+                        opStr = "IS";
+                    else if (Operation == OperationType.NotEqualTo)
+                        opStr = "IS NOT";
+                } // end if
+
+                if (useParameters) {
+                    valStr = '@' + Name;
+                    if (cmd != null)
+                        cmd.AddParameter(Name, val);
+                } else
+                    valStr = val.ToSqlString();
+            } // end if
+
             return Name + ' ' + opStr + ' ' + valStr;
         } // end method
 

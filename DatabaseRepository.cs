@@ -80,6 +80,144 @@ namespace Xanotech.Repository {
 
 
 
+        private void AddFromClause(IDbCommand cmd, IEnumerable<string> tableNames) {
+            string lastTableName = null;
+            IList<string> lastPrimaryKeys = null;
+            foreach (var tableName in tableNames) {
+                var primaryKeys = Info.GetPrimaryKeys(tableName).ToList();
+                if (lastTableName != null)
+                    cmd.CommandText += Environment.NewLine + "INNER JOIN ";
+                cmd.CommandText += tableName;
+
+                if (lastTableName != null) {
+                    if (primaryKeys.Count != lastPrimaryKeys.Count || primaryKeys.Count == 0)
+                        throw new DataException("Primary keys must be defined for and match across " +
+                            "parent and child tables for objects with inherritance (parent table: " +
+                            lastTableName + " / child table: " + tableName + ").");
+
+                    cmd.CommandText += Environment.NewLine + "ON ";
+                    if (primaryKeys.Count == 1)
+                        cmd.CommandText += tableName + "." + primaryKeys.First() + " = " +
+                            lastTableName + "." + lastPrimaryKeys.First();
+                    else
+                        for (int pk = 0; pk < primaryKeys.Count; pk++) {
+                            if (primaryKeys[pk] != lastPrimaryKeys[pk])
+                                throw new DataException("Primary keys must exactly match across " +
+                                    "parent and child tables for objects with inherritance " +
+                                    "(parent table keys: " + string.Join(", ", primaryKeys) +
+                                    " / child table keys: " + string.Join(", ", lastPrimaryKeys) + ").");
+
+                            if (pk > 0)
+                                cmd.CommandText += Environment.NewLine + "AND ";
+
+                            cmd.CommandText += tableName + "." + primaryKeys[pk] + " = " +
+                                lastTableName + "." + lastPrimaryKeys[pk];
+                        } // end for
+                } // end if
+
+                lastTableName = tableName;
+                lastPrimaryKeys = primaryKeys;
+            } // end foreach
+        } // end method
+
+
+
+        /// <summary>
+        ///   Creates the ORDER BY clause of a SQL statement based on the
+        ///   tableNames and orderColumns specified.  The tableNames are
+        ///   used to prefix the columns.  The orderColumns parameter is
+        ///   an IDictionary where the column names are keys and the values
+        ///   indicate sorting order: 1 for ascending, -1 for descending
+        ///   (columns with 0 are ignored).
+        /// </summary>
+        /// <param name="tableNames"></param>
+        /// <param name="orderColumns"></param>
+        /// <returns></returns>
+        private void AddOrderByClause(IDbCommand cmd, IEnumerable<string> tableNames,
+            IDictionary<string, int> orderColumns) {
+            if (orderColumns == null)
+                return;
+
+            var columns = new List<string>();
+            foreach (var column in orderColumns.Keys) {
+                if (string.IsNullOrEmpty(column))
+                    continue;
+
+                var direction = orderColumns[column];
+                if (direction == 0)
+                    continue;
+
+                var table = GetTableForColumn(tableNames, column);
+                if (table != null) {
+                    columns.Add(table + '.' + column);
+                    if (direction < 0)
+                        columns.Add(" DESC");
+                } // end if
+            } // end foreach
+
+            if (columns.Any())
+                cmd.CommandText += Environment.NewLine + "ORDER BY " + string.Join(", ", columns);
+        } // end method
+
+
+
+        private void AddPagingClause<T>(IDbCommand cmd, string tableName, Cursor<T> cursor)
+            where T : new() {
+            if (cursor.limit == null && cursor.skip == null)
+                return;
+
+            cursor.pagingMechanism = Info.GetPagingMechanism(tableName);
+            if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.Programmatic)
+                return;
+
+            string pagingClause = null;
+            if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.LimitOffset) {
+                var parts = new List<string>(2);
+                if (cursor.limit != null)
+                    parts.Add("LIMIT " + cursor.limit);
+                if (cursor.skip != null)
+                    parts.Add("OFFSET " + cursor.skip);
+                pagingClause = string.Join(" ", parts);
+            } // end if
+
+            if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.OffsetFetchFirst) {
+                var parts = new List<string>(3);
+                if (cursor.sort == null || cursor.sort.Count == 0) {
+                    var firstColumn = Info.GetSchemaTable(tableName).Rows[0][0];
+                    parts.Add("ORDER BY " + firstColumn);
+                } // end if
+                parts.Add("OFFSET " + cursor.skip ?? 0 + " ROWS");
+                if (cursor.limit != null)
+                    parts.Add("FETCH FIRST " + cursor.limit + " ROWS ONLY");
+                pagingClause = string.Join(" ", parts);
+            } // end if
+
+            if (pagingClause != null)
+                cmd.CommandText += Environment.NewLine + pagingClause;
+        } // end method
+
+
+
+        private void AddWhereClause(IDbCommand cmd, IEnumerable<string> tableNames,
+            IEnumerable<Criterion> criteria) {
+            if (criteria == null)
+                return;
+
+            var whereAdded = false;
+            foreach (var criterion in criteria) {
+                var table = GetTableForColumn(tableNames, criterion.Name);
+                if (table == null)
+                    continue;
+
+                cmd.CommandText += Environment.NewLine;
+                cmd.CommandText += whereAdded ? "AND " : "WHERE ";
+                cmd.CommandText += table + '.' + criterion.ToString(cmd, true);
+                whereAdded = true;
+            } // end foreach
+        } // end method
+
+
+
         protected void CloseConnection() {
             if (connection != null) {
                 Log("Connection " + connectionId + " closed");
@@ -180,16 +318,11 @@ namespace Xanotech.Repository {
         protected long Count(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria) {
             try {
                 var cursor = new Cursor<object>(criteria, Fetch, this);
-                var sql = FormatSelectQuery(tableNames, cursor, true);
-
-                object result;
-                using (var cmd = Connection.CreateCommand()) {
-                    cmd.CommandText = sql;
-                    Log(sql);
-                    result = cmd.ExecuteScalar();
+                using (var cmd = CreateSelectCommand(tableNames, cursor, true)) {
+                    Log(cmd.CommandText);
+                    var result = cmd.ExecuteScalar();
+                    return result as long? ?? result as int? ?? 0;
                 } // end using
-
-                return result as long? ?? result as int? ?? 0;
             } finally {
                 CloseConnection();
             } // end try-finally
@@ -211,6 +344,56 @@ namespace Xanotech.Repository {
 
         public static DatabaseRepository Create(string connectionStringName) {
             return new DatabaseRepository(connectionStringName);
+        } // end method
+
+
+
+        private IDbCommand CreateDeleteCommand(string table, IEnumerable<Criterion> criteria) {
+            var cmd = Connection.CreateCommand();
+            try {
+                cmd.CommandText = "DELETE FROM " + table;
+                AddWhereClause(cmd, new[] { table }, criteria);
+                Log(cmd.CommandText);
+                return cmd;
+            } catch {
+                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
+                // and then let the exception bubble up the stack.
+                cmd.Dispose();
+                throw;
+            } // end try-catch
+        } // end method
+
+
+
+        private IDbCommand CreateInsertCommand(string table, IDictionary<string, string> values) {
+            var cmd = Connection.CreateCommand();
+            try {
+                cmd.CommandText += "INSERT INTO " + table + Environment.NewLine + "(";
+
+                var valueString = new StringBuilder();
+                string lastKey = null;
+                foreach (var key in values.Keys) {
+                    if (lastKey != null) {
+                        cmd.CommandText += ", ";
+                        valueString.Append(", ");
+                    } // end if
+                    cmd.CommandText += key;
+                    valueString.Append(values[key]);
+                    lastKey = key;
+                } // end for
+
+                cmd.CommandText += ")" + Environment.NewLine + "VALUES" + Environment.NewLine + "(";
+                cmd.CommandText += valueString.ToString();
+                cmd.CommandText += ')';
+
+                Log(cmd.CommandText);
+                return cmd;
+            } catch {
+                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
+                // and then let the exception bubble up the stack.
+                cmd.Dispose();
+                throw;
+            } // end try-catch
         } // end method
 
 
@@ -268,38 +451,86 @@ namespace Xanotech.Repository {
 
 
 
-        private IEnumerable<T> CreateObjects<T>(string sql, Cursor<T> cursor) where T : new() {
+        private IEnumerable<T> CreateObjects<T>(IDbCommand cmd, Cursor<T> cursor) where T : new() {
             var objs = new List<T>();
-            using (var cmd = Connection.CreateCommand()) {
-                var recordNum = 0;
-                var recordStart = cursor.skip ?? 0;
-                var recordStop = cursor.limit != null ? recordStart + cursor.limit : null;
+            var recordNum = 0;
+            var recordStart = cursor.skip ?? 0;
+            var recordStop = cursor.limit != null ? recordStart + cursor.limit : null;
 
-                cmd.CommandText = sql;
-                Log(sql);
-                using (var dr = cmd.ExecuteReader())
-                while (dr.Read()) {
-                    // Create objects if the pagingMechanism is not Programatic or
-                    // (if it is) and recordNum is on or after recordStart and
-                    // before recordStop.  recordStop is null if cursor.limit
-                    // is null and in that case, use recordNum + 1 so that the record
-                    // always results in CreateObject (since cursor.limit wasn't specified).
-                    if (cursor.pagingMechanism != DatabaseInfo.PagingMechanism.Programmatic ||
-                        recordNum >= recordStart &&
-                        recordNum < (recordStop ?? (recordNum + 1)))
-                        objs.Add(CreateObject<T>(dr));
+            using (var dr = cmd.ExecuteReader())
+            while (dr.Read()) {
+                // Create objects if the pagingMechanism is not Programatic or
+                // (if it is) and recordNum is on or after recordStart and
+                // before recordStop.  recordStop is null if cursor.limit
+                // is null and in that case, use recordNum + 1 so that the record
+                // always results in CreateObject (since cursor.limit wasn't specified).
+                if (cursor.pagingMechanism != DatabaseInfo.PagingMechanism.Programmatic ||
+                    recordNum >= recordStart &&
+                    recordNum < (recordStop ?? (recordNum + 1)))
+                    objs.Add(CreateObject<T>(dr));
                     
-                    recordNum++;
+                recordNum++;
 
-                    // Stop iterating if the pagingMechanism is null or Programmatic,
-                    // recordStop is defined, and recordNum is on or after recordStop.
-                    if ((cursor.pagingMechanism == null ||
-                        cursor.pagingMechanism == DatabaseInfo.PagingMechanism.Programmatic) &&
-                        recordStop != null && recordNum >= recordStop)
-                        break;
-                } // end while
-            } // end using
+                // Stop iterating if the pagingMechanism is null or Programmatic,
+                // recordStop is defined, and recordNum is on or after recordStop.
+                if ((cursor.pagingMechanism == null ||
+                    cursor.pagingMechanism == DatabaseInfo.PagingMechanism.Programmatic) &&
+                    recordStop != null && recordNum >= recordStop)
+                    break;
+            } // end while
             return objs;
+        } // end method
+
+
+
+        private IDbCommand CreateSelectCommand<T>(IEnumerable<string> tableNames, Cursor<T> cursor, bool countOnly)
+            where T : new() {
+            var cmd = Connection.CreateCommand();
+            try {
+                cmd.CommandText = countOnly ? "SELECT COUNT(*) FROM " : "SELECT * FROM ";
+                AddFromClause(cmd, tableNames);
+                AddWhereClause(cmd, tableNames, cursor.criteria);
+                AddOrderByClause(cmd, tableNames, cursor.sort);
+                AddPagingClause(cmd, tableNames.FirstOrDefault(), cursor);
+
+                Log(cmd.CommandText);
+                return cmd;
+            } catch {
+                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
+                // and then let the exception bubble up the stack.
+                cmd.Dispose();
+                throw;
+            } // end try-catch
+        } // end method
+
+
+
+        private IDbCommand CreateUpdateCommand(string table,
+            IDictionary<string, string> values, IEnumerable<Criterion> criteria) {
+
+            var cmd = Connection.CreateCommand();
+            try {
+                cmd.CommandText = "UPDATE " + table + " SET" + Environment.NewLine;
+
+                string lastKey = null;
+                foreach (string key in values.Keys) {
+                    if (lastKey != null)
+                        cmd.CommandText += "," + Environment.NewLine;
+                    var value = values[key];
+                    cmd.CommandText += key + " = " + value;
+                    lastKey = key;
+                } // end foreach
+
+                AddWhereClause(cmd, new[] { table }, criteria);
+
+                Log(cmd.CommandText);
+                return cmd;
+            } catch {
+                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
+                // and then let the exception bubble up the stack.
+                cmd.Dispose();
+                throw;
+            } // end try-catch
         } // end method
 
 
@@ -311,33 +542,17 @@ namespace Xanotech.Repository {
 
 
 
-        private void ExecuteNonQuery(string sql) {
-            using (var cmd = Connection.CreateCommand()) {
-                cmd.CommandText = sql;
-                Log(sql);
-                cmd.ExecuteNonQuery();
-            } // end using
-        } // end method
-
-
-
-        private void ExecuteWrite(string sql) {
-            ExecuteNonQuery(sql);
-        } // end method
-
-
-
         private IEnumerable<T> Fetch<T>(IEnumerable<Criterion> criteria, Cursor<T> cursor)
             where T : new() {
             try {
-                var tableNames = Info.GetTableNames(typeof(T));
-                var sql = FormatSelectQuery(tableNames, cursor, false);
-
                 bool wasNull = idCache == null;
                 if (wasNull)
                     idCache = new Cache<Tuple<Type, long?>, object>();
 
-                var objs = CreateObjects<T>(sql, cursor);
+                IEnumerable<T> objs;
+                var tableNames = Info.GetTableNames(typeof(T));
+                using (var cmd = CreateSelectCommand(tableNames, cursor, false))
+                    objs = CreateObjects<T>(cmd, cursor);
                 foreach (var obj in objs) {
                     var id = GetId(obj);
                     idCache.GetValue(new Tuple<Type, long?>(obj.GetType(), id), () => obj);
@@ -438,219 +653,6 @@ namespace Xanotech.Repository {
             if (index > -1)
                 name = name.Substring(index + 1);
             return name;
-        } // end method
-
-
-
-        private string FormatDeleteQuery(string table, IEnumerable<Criterion> criteria) {
-            return "DELETE FROM " + table + " WHERE " +
-                FormatWhereClause(new[] {table}, criteria);
-        } // end method
-
-
-
-        private string FormatFromClause(IEnumerable<string> tableNames) {
-            var fromClause = "";
-            string lastTableName = null;
-            IList<string> lastPrimaryKeys = null;
-            foreach (var tableName in tableNames) {
-                var primaryKeys = Info.GetPrimaryKeys(tableName).ToList();
-                if (lastTableName != null)
-                    fromClause += Environment.NewLine + "INNER JOIN ";
-                fromClause += tableName;
-
-                if (lastTableName != null) {
-                    if (primaryKeys.Count != lastPrimaryKeys.Count || primaryKeys.Count == 0)
-                        throw new DataException("Primary keys must be defined for and match across " +
-                            "parent and child tables for objects with inherritance (parent table: " +
-                            lastTableName + " / child table: " + tableName + ").");
-
-                    fromClause += Environment.NewLine + "ON ";
-                    if (primaryKeys.Count == 1)
-                        fromClause += tableName + "." + primaryKeys.First() + " = " +
-                            lastTableName + "." + lastPrimaryKeys.First();
-                    else
-                        for (int pk = 0; pk < primaryKeys.Count; pk++) {
-                            if (primaryKeys[pk] != lastPrimaryKeys[pk])
-                                throw new DataException("Primary keys must exactly match across " +
-                                    "parent and child tables for objects with inherritance " +
-                                    "(parent table keys: " + string.Join(", ", primaryKeys) +
-                                    " / child table keys: " + string.Join(", ", lastPrimaryKeys) + ").");
-
-                            if (pk > 0)
-                                fromClause += Environment.NewLine + "AND ";
-                            fromClause += tableName + "." + primaryKeys[pk] + " = " +
-                                lastTableName + "." + lastPrimaryKeys[pk];
-                        } // end for
-                } // end if
-
-                lastTableName = tableName;
-                lastPrimaryKeys = primaryKeys;
-            } // end foreach
-            return fromClause;
-        } // end method
-
-
-
-        private static string FormatInsertQuery(string table, IDictionary<string, string> values) {
-            var sql = new StringBuilder();
-            sql.Append("INSERT INTO " + table + Environment.NewLine + "(");
-
-            var valueString = new StringBuilder();
-            string lastKey = null;
-            foreach (var key in values.Keys) {
-                if (lastKey != null) {
-                    sql.Append(", ");
-                    valueString.Append(", ");
-                } // end if
-                sql.Append(key);
-                valueString.Append(values[key]);
-                lastKey = key;
-            } // end for
-
-            sql.Append(")" + Environment.NewLine + "VALUES" + Environment.NewLine + "(");
-            sql.Append(valueString.ToString());
-            sql.Append(')');
-            return sql.ToString();
-        } // end method
-
-
-
-        /// <summary>
-        ///   Creates the ORDER BY clause of a SQL statement based on the
-        ///   tableNames and orderColumns specified.  The tableNames are
-        ///   used to prefix the columns.  The orderColumns parameter is
-        ///   an IDictionary where the column names are keys and the values
-        ///   indicate sorting order: 1 for ascending, -1 for descending
-        ///   (columns with 0 are ignored).
-        /// </summary>
-        /// <param name="tableNames"></param>
-        /// <param name="orderColumns"></param>
-        /// <returns></returns>
-        private string FormatOrderClause(IEnumerable<string> tableNames,
-            IDictionary<string, int> orderColumns) {
-            if (orderColumns == null)
-                return null;
-
-            var columns = new List<string>();
-            foreach (var column in orderColumns.Keys) {
-                if (string.IsNullOrEmpty(column))
-                    continue;
-
-                var direction = orderColumns[column];
-                if (direction == 0)
-                    continue;
-
-                var table = GetTableForColumn(tableNames, column);
-                if (table != null) {
-                    columns.Add(table + '.' + column);
-                    if (direction < 0)
-                        columns.Add(" DESC");
-                } // end if
-            } // end foreach
-
-            string result = null;
-            if (columns.Any())
-                result = string.Join(", ", columns);
-            return result;
-        } // end method
-
-
-
-        private string FormatPagingClause<T>(string tableName, Cursor<T> cursor)
-            where T : new() {
-            if (cursor.limit == null && cursor.skip == null)
-                return null;
-
-            cursor.pagingMechanism = Info.GetPagingMechanism(tableName);
-            if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.Programmatic)
-                return null;
-
-            string pagingClause = null;
-            if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.LimitOffset) {
-                var parts = new List<string>(2);
-                if (cursor.limit != null)
-                    parts.Add("LIMIT " + cursor.limit);
-                if (cursor.skip != null)
-                    parts.Add("OFFSET " + cursor.skip);
-                pagingClause = string.Join(" ", parts);
-            } // end if
-
-            if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.OffsetFetchFirst) {
-                var parts = new List<string>(3);
-                if (cursor.sort == null || cursor.sort.Count == 0) {
-                    var firstColumn = Info.GetSchemaTable(tableName).Rows[0][0];
-                    parts.Add("ORDER BY " + firstColumn);
-                } // end if
-                parts.Add("OFFSET " + cursor.skip ?? 0 + " ROWS");
-                if (cursor.limit != null)
-                    parts.Add("FETCH FIRST " + cursor.limit + " ROWS ONLY");
-                pagingClause = string.Join(" ", parts);
-            } // end if
-
-            return pagingClause;
-        } // end method
-
-
-
-        private string FormatSelectQuery<T>(IEnumerable<string> tableNames, Cursor<T> cursor, bool countOnly)
-            where T : new() {
-            var sql = countOnly ? "SELECT COUNT(*) FROM " : "SELECT * FROM ";
-            sql += FormatFromClause(tableNames);
-
-            var selectCriteria = FormatWhereClause(tableNames, cursor.criteria);
-            if (selectCriteria != null)
-                sql += Environment.NewLine + "WHERE " + selectCriteria;
-
-            var selectOrderColumns = FormatOrderClause(tableNames, cursor.sort);
-            if (selectOrderColumns != null)
-                sql += Environment.NewLine + "ORDER BY " + selectOrderColumns;
-
-            var pagingClause = FormatPagingClause(tableNames.FirstOrDefault(), cursor);
-            if (pagingClause != null)
-                sql += Environment.NewLine + pagingClause;
-
-            return sql;
-        } // end method
-
-
-
-        private string FormatUpdateQuery(string table,
-            IDictionary<string, string> values, IEnumerable<Criterion> criteria) {
-            var sql = new StringBuilder();
-            sql.Append("UPDATE " + table + " SET" + Environment.NewLine);
-
-            string lastKey = null;
-            foreach (string key in values.Keys) {
-                if (lastKey != null)
-                    sql.Append("," + Environment.NewLine);
-                var value = values[key];
-                sql.Append(key + " = " + value);
-                lastKey = key;
-            } // end foreach
-
-            sql.Append(Environment.NewLine + "WHERE " + FormatWhereClause(new[] {table}, criteria));
-            return sql.ToString();
-        } // end method
-
-
-
-        private string FormatWhereClause(IEnumerable<string> tableNames,
-            IEnumerable<Criterion> criteria) {
-            if (criteria == null)
-                return null;
-
-            var whereClauseItems = new List<string>();
-            foreach (var criterion in criteria) {
-                var table = GetTableForColumn(tableNames, criterion.Name);
-                if (table != null)
-                    whereClauseItems.Add(table + '.' + criterion.ToString());
-            } // end foreach
-
-            string result = null;
-            if (whereClauseItems.Any())
-                result = string.Join(Environment.NewLine + "AND ", whereClauseItems);
-            return result;
         } // end method
 
 
@@ -783,8 +785,8 @@ namespace Xanotech.Repository {
         private void RemoveObjectFromTable(object obj, string tableName) {
             var keys = GetPrimaryKeyCriteria(obj, tableName);
             if (RecordExists(tableName, keys)) {
-                var sql = FormatDeleteQuery(tableName, keys);
-                ExecuteWrite(sql);
+                using (var cmd = CreateDeleteCommand(tableName, keys))
+                    cmd.ExecuteNonQuery();
             } // end if
         } // end method
 
@@ -821,13 +823,10 @@ namespace Xanotech.Repository {
             var criteria = GetPrimaryKeyCriteria(obj, tableName);
             var values = GetValues(obj, tableName);
 
-            string sql;
-            if (RecordExists(tableName, criteria))
-                sql = FormatUpdateQuery(tableName, values, criteria);
-            else
-                sql = FormatInsertQuery(tableName, values);
-
-            ExecuteWrite(sql);
+            using (var cmd = RecordExists(tableName, criteria) ?
+                CreateUpdateCommand(tableName, values, criteria) :
+                CreateInsertCommand(tableName, values))
+                cmd.ExecuteNonQuery();
         } // end method
 
 
