@@ -72,19 +72,19 @@ namespace Xanotech.Repository {
 
         private IEnumerable<string> FindPrimaryKeys(string tableName) {
             var tableDef = GetTableDefinition(tableName);
-            var sql = "SELECT kcu.column_name " +
-                "FROM information_schema.key_column_usage kcu " +
-                "INNER JOIN information_schema.table_constraints tc " +
-                "ON (tc.constraint_name = kcu.constraint_name OR " +
-                "(tc.constraint_name IS NULL AND kcu.constraint_name IS NULL)) " +
-                "AND (tc.table_schema = kcu.table_schema OR " +
-                "(tc.table_schema IS NULL AND kcu.table_schema IS NULL)) " +
-                "AND (tc.table_name = kcu.table_name OR " +
-                "(tc.table_name IS NULL AND kcu.table_name IS NULL)) " +
-                "WHERE tc.constraint_type = 'PRIMARY KEY' " +
+            var sql = "SELECT kcu.column_name" + Environment.NewLine +
+                "FROM information_schema.key_column_usage kcu" + Environment.NewLine +
+                "INNER JOIN information_schema.table_constraints tc" + Environment.NewLine +
+                "ON (tc.constraint_name = kcu.constraint_name OR" + Environment.NewLine +
+                "(tc.constraint_name IS NULL AND kcu.constraint_name IS NULL))" + Environment.NewLine +
+                "AND (tc.table_schema = kcu.table_schema OR" + Environment.NewLine +
+                "(tc.table_schema IS NULL AND kcu.table_schema IS NULL))" + Environment.NewLine +
+                "AND (tc.table_name = kcu.table_name OR" + Environment.NewLine +
+                "(tc.table_name IS NULL AND kcu.table_name IS NULL))" + Environment.NewLine +
+                "WHERE tc.constraint_type = 'PRIMARY KEY'" + Environment.NewLine +
                 "AND kcu.table_name = " + tableDef.Item2.ToSqlString();
-            if (tableDef.Item1 != null)
-                sql += " AND kcu.table_schema = " + tableDef.Item1.ToSqlString();
+            if (!string.IsNullOrEmpty(tableDef.Item1))
+                sql += Environment.NewLine + "AND kcu.table_schema = " + tableDef.Item1.ToSqlString();
             log(sql);
             IEnumerable<IDictionary<string, object>> results;
             results = connection.ExecuteReader(sql);
@@ -159,12 +159,15 @@ namespace Xanotech.Repository {
 
 
 
-        private Tuple<string, string, string> FindTableDefinition(string typeName) {
-            if (typeName == null)
-                throw new ArgumentNullException("typeName", "The typeName parameter was not supplied.");
-
-            var sql = "SELECT table_schema, table_name " +
-                    "FROM information_schema.tables WHERE table_name = " + typeName.ToSqlString();
+        private Tuple<string, string, string> FindTableDefinition(string tableName) {
+            var splitTableName = tableName.Split('.');
+            tableName = splitTableName.Last();
+            var sql = "SELECT table_schema, table_name" + Environment.NewLine +
+                    "FROM information_schema.tables" + Environment.NewLine +
+                    "WHERE table_name = " + tableName.ToSqlString();
+            if (splitTableName.Length > 1)
+                sql += Environment.NewLine + "AND table_schema = " +
+                    splitTableName[splitTableName.Length - 2].ToSqlString();
             log(sql);
             IEnumerable<IDictionary<string, object>> results;
             results = connection.ExecuteReader(sql);
@@ -173,19 +176,19 @@ namespace Xanotech.Repository {
             if (count == 0)
                 return null;
             else if (count > 1)
-                throw new DataException("The table \"" + typeName +
+                throw new DataException("The table \"" + tableName +
                     "\" is ambiguous because it is defined in multiple database schemas (" +
                     string.Join(", ", results.Select(r => r["TABLE_SCHEMA"])) +
                     ").  Use the Repository.Map method to explicitly define how " +
-                    typeName + " maps to the database.");
+                    tableName + " maps to the database.");
 
             var first = results.First();
 
+            tableName = first["table_name"] as string;
             var schemaName = first["table_schema"] as string;
-            var tableName = first["table_name"] as string;
             var fullName = tableName;
-            if (string.IsNullOrEmpty(schemaName))
-                fullName = schemaName + "." + fullName;
+            if (!string.IsNullOrEmpty(schemaName))
+                fullName = schemaName + "." + tableName;
             return new Tuple<string, string, string>(schemaName, tableName, fullName);
         } // end method
 
@@ -206,6 +209,9 @@ namespace Xanotech.Repository {
 
 
         public PropertyInfo GetIdProperty(Type type) {
+            if (type == null)
+                throw new ArgumentNullException("type", "The type parameter was null.");
+
             var info = infoCache[connection.ConnectionString];
             return info.idPropertyCache.GetValue(type, FindIdProperty);
         } // end method
@@ -219,6 +225,9 @@ namespace Xanotech.Repository {
 
 
         public PagingMechanism GetPagingMechanism(string tableName) {
+            if (tableName == null)
+                throw new ArgumentNullException("tableName", "The tableName parameter was null.");
+
             var info = infoCache[connection.ConnectionString];
             if (info.pagingMechanism == null)
                 info.pagingMechanism = FindPagingMechanism(tableName);
@@ -228,13 +237,19 @@ namespace Xanotech.Repository {
 
 
         public IEnumerable<string> GetPrimaryKeys(string tableName) {
+            if (tableName == null)
+                throw new ArgumentNullException("tableName", "The tableName parameter was null.");
+
             var info = infoCache[connection.ConnectionString];
-            return info.primaryKeysCache.GetValue(tableName, FindPrimaryKeys);
+            return info.primaryKeysCache.GetValue(tableName.ToUpper(), FindPrimaryKeys);
         } // end method
 
 
 
         internal IEnumerable<Reference> GetReferences(Type type) {
+            if (type == null)
+                throw new ArgumentNullException("type", "The type parameter was null.");
+
             var info = infoCache[connection.ConnectionString];
             return info.referencesCache.GetValue(type, FindReferences);
         } // end method
@@ -242,20 +257,29 @@ namespace Xanotech.Repository {
 
 
         public DataTable GetSchemaTable(string tableName) {
+            if (tableName == null)
+                throw new ArgumentNullException("tableName", "The tableName parameter was null.");
+
             var info = infoCache[connection.ConnectionString];
-            return info.schemaTableCache.GetValue(tableName, FindSchemaTable);
+            return info.schemaTableCache.GetValue(tableName.ToUpper(), FindSchemaTable);
         } // end method
 
 
 
-        public Tuple<string, string, string> GetTableDefinition(string typeName) {
+        public Tuple<string, string, string> GetTableDefinition(string tableName) {
+            if (tableName == null)
+                throw new ArgumentNullException("tableName", "The tableName parameter was null.");
+
             var info = infoCache[connection.ConnectionString];
-            return info.tableDefinitionCache.GetValue(typeName, FindTableDefinition);
+            return info.tableDefinitionCache.GetValue(tableName.ToUpper(), FindTableDefinition);
         } // end method
 
 
 
         public IEnumerable<string> GetTableNames(Type type) {
+            if (type == null)
+                throw new ArgumentNullException("type", "The type parameter was null.");
+
             var info = infoCache[connection.ConnectionString];
             return info.tableNamesCache.GetValue(type, FindTableNames);
         } // end method

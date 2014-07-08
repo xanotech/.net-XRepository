@@ -81,13 +81,14 @@ namespace Xanotech.Repository {
 
 
         private void AddFromClause(IDbCommand cmd, IEnumerable<string> tableNames) {
+            var sql = new StringBuilder();
             string lastTableName = null;
             IList<string> lastPrimaryKeys = null;
             foreach (var tableName in tableNames) {
                 var primaryKeys = Info.GetPrimaryKeys(tableName).ToList();
                 if (lastTableName != null)
-                    cmd.CommandText += Environment.NewLine + "INNER JOIN ";
-                cmd.CommandText += tableName;
+                    sql.Append(Environment.NewLine + "INNER JOIN ");
+                sql.Append(tableName);
 
                 if (lastTableName != null) {
                     if (primaryKeys.Count != lastPrimaryKeys.Count || primaryKeys.Count == 0)
@@ -95,10 +96,10 @@ namespace Xanotech.Repository {
                             "parent and child tables for objects with inherritance (parent table: " +
                             lastTableName + " / child table: " + tableName + ").");
 
-                    cmd.CommandText += Environment.NewLine + "ON ";
+                    sql.Append(Environment.NewLine + "ON ");
                     if (primaryKeys.Count == 1)
-                        cmd.CommandText += tableName + "." + primaryKeys.First() + " = " +
-                            lastTableName + "." + lastPrimaryKeys.First();
+                        sql.Append(tableName + "." + primaryKeys.First() + " = " +
+                            lastTableName + "." + lastPrimaryKeys.First());
                     else
                         for (int pk = 0; pk < primaryKeys.Count; pk++) {
                             if (primaryKeys[pk] != lastPrimaryKeys[pk])
@@ -108,16 +109,17 @@ namespace Xanotech.Repository {
                                     " / child table keys: " + string.Join(", ", lastPrimaryKeys) + ").");
 
                             if (pk > 0)
-                                cmd.CommandText += Environment.NewLine + "AND ";
+                                sql.Append(Environment.NewLine + "AND ");
 
-                            cmd.CommandText += tableName + "." + primaryKeys[pk] + " = " +
-                                lastTableName + "." + lastPrimaryKeys[pk];
+                            sql.Append(tableName + "." + primaryKeys[pk] + " = " +
+                                lastTableName + "." + lastPrimaryKeys[pk]);
                         } // end for
                 } // end if
 
                 lastTableName = tableName;
                 lastPrimaryKeys = primaryKeys;
             } // end foreach
+            cmd.CommandText += sql;
         } // end method
 
 
@@ -203,17 +205,19 @@ namespace Xanotech.Repository {
             if (criteria == null)
                 return;
 
+            var sql = new StringBuilder();
             var whereAdded = false;
             foreach (var criterion in criteria) {
                 var table = GetTableForColumn(tableNames, criterion.Name);
                 if (table == null)
                     continue;
 
-                cmd.CommandText += Environment.NewLine;
-                cmd.CommandText += whereAdded ? "AND " : "WHERE ";
-                cmd.CommandText += table + '.' + criterion.ToString(cmd, true);
+                sql.Append(Environment.NewLine);
+                sql.Append(whereAdded ? "AND " : "WHERE ");
+                sql.Append(table + '.' + criterion.ToString(cmd, true));
                 whereAdded = true;
             } // end foreach
+            cmd.CommandText += sql;
         } // end method
 
 
@@ -319,7 +323,6 @@ namespace Xanotech.Repository {
             try {
                 var cursor = new Cursor<object>(criteria, Fetch, this);
                 using (var cmd = CreateSelectCommand(tableNames, cursor, true)) {
-                    Log(cmd.CommandText);
                     var result = cmd.ExecuteScalar();
                     return result as long? ?? result as int? ?? 0;
                 } // end using
@@ -353,7 +356,7 @@ namespace Xanotech.Repository {
             try {
                 cmd.CommandText = "DELETE FROM " + table;
                 AddWhereClause(cmd, new[] { table }, criteria);
-                Log(cmd.CommandText);
+                Log(FormatLogMessage(cmd));
                 return cmd;
             } catch {
                 // If any exceptions occur, Dispose cmd (since its IDisposable and all)
@@ -365,28 +368,29 @@ namespace Xanotech.Repository {
 
 
 
-        private IDbCommand CreateInsertCommand(string table, IDictionary<string, string> values) {
+        private IDbCommand CreateInsertCommand(string table, IDictionary<string, object> values) {
             var cmd = Connection.CreateCommand();
             try {
-                cmd.CommandText += "INSERT INTO " + table + Environment.NewLine + "(";
-
+                var sql = new StringBuilder("INSERT INTO " + table + Environment.NewLine + "(");
                 var valueString = new StringBuilder();
-                string lastKey = null;
-                foreach (var key in values.Keys) {
-                    if (lastKey != null) {
-                        cmd.CommandText += ", ";
+                string lastColumn = null;
+                foreach (var column in values.Keys) {
+                    if (lastColumn != null) {
+                        sql.Append(", ");
                         valueString.Append(", ");
                     } // end if
-                    cmd.CommandText += key;
-                    valueString.Append(values[key]);
-                    lastKey = key;
+                    sql.Append(column);
+                    valueString.Append('@' + column);
+                    cmd.AddParameter(column, values[column]);
+                    lastColumn = column;
                 } // end for
 
-                cmd.CommandText += ")" + Environment.NewLine + "VALUES" + Environment.NewLine + "(";
-                cmd.CommandText += valueString.ToString();
-                cmd.CommandText += ')';
+                sql.Append(")" + Environment.NewLine + "VALUES" + Environment.NewLine + "(");
+                sql.Append(valueString.ToString());
+                sql.Append(')');
 
-                Log(cmd.CommandText);
+                cmd.CommandText = sql.ToString();
+                Log(FormatLogMessage(cmd));
                 return cmd;
             } catch {
                 // If any exceptions occur, Dispose cmd (since its IDisposable and all)
@@ -493,7 +497,7 @@ namespace Xanotech.Repository {
                 AddOrderByClause(cmd, tableNames, cursor.sort);
                 AddPagingClause(cmd, tableNames.FirstOrDefault(), cursor);
 
-                Log(cmd.CommandText);
+                Log(FormatLogMessage(cmd));
                 return cmd;
             } catch {
                 // If any exceptions occur, Dispose cmd (since its IDisposable and all)
@@ -506,24 +510,28 @@ namespace Xanotech.Repository {
 
 
         private IDbCommand CreateUpdateCommand(string table,
-            IDictionary<string, string> values, IEnumerable<Criterion> criteria) {
+            IDictionary<string, object> values, IEnumerable<Criterion> criteria) {
 
             var cmd = Connection.CreateCommand();
             try {
-                cmd.CommandText = "UPDATE " + table + " SET" + Environment.NewLine;
+                var sql = new StringBuilder("UPDATE " + table + " SET" + Environment.NewLine);
 
-                string lastKey = null;
-                foreach (string key in values.Keys) {
-                    if (lastKey != null)
-                        cmd.CommandText += "," + Environment.NewLine;
-                    var value = values[key];
-                    cmd.CommandText += key + " = " + value;
-                    lastKey = key;
+                var primaryKeyColumns = criteria.Select(c => c.Name);
+                string lastColumn = null;
+                foreach (string column in values.Keys) {
+                    if (primaryKeyColumns.Contains(column))
+                        continue;
+
+                    if (lastColumn != null)
+                        sql.Append("," + Environment.NewLine);
+                    sql.Append(column + " = @" + column);
+                    cmd.AddParameter(column, values[column]);
+                    lastColumn = column;
                 } // end foreach
-
+                cmd.CommandText = sql.ToString();
                 AddWhereClause(cmd, new[] { table }, criteria);
 
-                Log(cmd.CommandText);
+                Log(FormatLogMessage(cmd));
                 return cmd;
             } catch {
                 // If any exceptions occur, Dispose cmd (since its IDisposable and all)
@@ -657,6 +665,26 @@ namespace Xanotech.Repository {
 
 
 
+        private string FormatLogMessage(IDbCommand cmd) {
+            var msg = new StringBuilder(cmd.CommandText);
+            if (cmd.Parameters.Count == 0)
+                return msg.ToString();
+
+            msg.Append(Environment.NewLine);
+            var isAfterFirst = false;
+            foreach (var obj in cmd.Parameters) {
+                if (isAfterFirst)
+                    msg.Append(", ");
+
+                var parameter = obj as IDbDataParameter;
+                msg.Append('@' + parameter.ParameterName + " = " + parameter.Value.ToSqlString());
+                isAfterFirst = true;
+            } // end foreach
+            return msg.ToString();
+        } // end method
+
+
+
         private long? GetId<T>(T obj) {
             PropertyInfo idProperty;
             return GetId(obj, out idProperty);
@@ -707,8 +735,8 @@ namespace Xanotech.Repository {
 
 
 
-        private IDictionary<string, string> GetValues(object obj, string tableName) {
-            var values = new Dictionary<string, string>();
+        private IDictionary<string, object> GetValues(object obj, string tableName) {
+            var values = new Dictionary<string, object>();
             var schema = Info.GetSchemaTable(tableName);
             if (schema == null)
                 return values;
@@ -719,8 +747,7 @@ namespace Xanotech.Repository {
                 object value = null;
                 var prop = mirror.GetProperty(key);
                 if (prop != null)
-                    value = prop.GetValue(obj, null);
-                values[key] = value.ToSqlString();
+                    values[key] = prop.GetValue(obj, null);
             } // end if
 
             return values;

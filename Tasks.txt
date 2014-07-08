@@ -1,4 +1,3 @@
-o Change inline values to parameters
 o Add Connection closing tracking in order to report unclosed connections
 o Reuse commands when updating, inserting, or deleting collections of objects
 o Test DatabaseRepository
