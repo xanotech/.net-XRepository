@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
@@ -13,29 +14,55 @@ namespace Xanotech.Repository {
 
     public class DatabaseRepository : IRepository {
 
-        // The idCache is used exclusively when retrieving objects from
-        // the database and only exists for the current thread.
+        /// <summary>
+        ///   A static collection of connectionId values with their associated ConnectionInfos.
+        /// </summary>
+        private static ConcurrentDictionary<long, ConnectionInfo> connectionInfoMap =
+            new ConcurrentDictionary<long, ConnectionInfo>();
+
+        /// <summary>
+        ///   Holds the next value to be assigned to connectionId when a new connection is created.
+        /// </summary>
+        private static long nextConnectionId = 0;
+
+        /// <summary>
+        ///   Used as a lock for thread-safe access to nextConnectionId.
+        /// </summary>
+        private static object nextConnectionIdLock = new object(); // Used for thread locking when accessing nextConnectionId.
+
+
+
+        /// <summary>
+        ///   Created by the Connection property as it is needed during a repository call
+        ///   (ie Count, Find, Save, Remove, etc).  At the the end of the call, it is Disposed.
+        ///   It should only be accessed via the Connection property.
+        /// </summary>
+        private IDbConnection connection;
+
+        /// <summary>
+        ///   Holds the "id" of the current connection.  The id values are simply consecutive
+        ///   integers stored in the static nextConnectionId which is incremented whenever
+        ///   a new connection is created.
+        /// </summary>
+        private long connectionId;
+
+        /// <summary>
+        ///   The idCache is used exclusively when retrieving objects from
+        ///   the database and only exists for the current thread.
+        /// </summary>
         [ThreadStatic]
         private static Cache<Tuple<Type, long?>, object> idCache;
 
-        // This connection is created as soon as it is needed during a repository call
-        // (ie Count, Find, Save, Removed, etc).  At the the end of the call, it is Disposed.
-        // It should only be accessed via GetConnection and CloseConnection;
-        private IDbConnection connection;
-        private static long connectionId = 0; // Tracks connections as they are opened / closed.
-
-        // Created as it is needed during a repository call.  It relies on connection
-        // but does not need to be disposed since disposing of connection is sufficient.
-        // It should only be accessed via GetInfo.
-        private DatabaseInfo info;
-
-        private Action<string> log;
+        /// <summary>
+        ///   The Func used for creating / opening a new connection (provided during construction).
+        /// </summary>
         private Func<IDbConnection> openConnectionFunc;
 
 
 
         public DatabaseRepository(Func<IDbConnection> openConnectionFunc) {
             this.openConnectionFunc = openConnectionFunc;
+            CreationStack = new StackTrace(true).ToString();
         } // end constructor
 
 
@@ -85,7 +112,7 @@ namespace Xanotech.Repository {
             string lastTableName = null;
             IList<string> lastPrimaryKeys = null;
             foreach (var tableName in tableNames) {
-                var primaryKeys = Info.GetPrimaryKeys(tableName).ToList();
+                var primaryKeys = DatabaseInfo.GetPrimaryKeys(tableName).ToList();
                 if (lastTableName != null)
                     sql.Append(Environment.NewLine + "INNER JOIN ");
                 sql.Append(tableName);
@@ -168,7 +195,7 @@ namespace Xanotech.Repository {
             if (cursor.limit == null && cursor.skip == null)
                 return;
 
-            cursor.pagingMechanism = Info.GetPagingMechanism(tableName);
+            cursor.pagingMechanism = DatabaseInfo.GetPagingMechanism(tableName);
             if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.Programmatic)
                 return;
 
@@ -185,7 +212,7 @@ namespace Xanotech.Repository {
             if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.OffsetFetchFirst) {
                 var parts = new List<string>(3);
                 if (cursor.sort == null || cursor.sort.Count == 0) {
-                    var firstColumn = Info.GetSchemaTable(tableName).Rows[0][0];
+                    var firstColumn = DatabaseInfo.GetSchemaTable(tableName).Rows[0][0];
                     parts.Add("ORDER BY " + firstColumn);
                 } // end if
                 parts.Add("OFFSET " + cursor.skip ?? 0 + " ROWS");
@@ -222,14 +249,41 @@ namespace Xanotech.Repository {
 
 
 
+        private static void CheckForConnectionLeaks(int seconds) {
+            if (!Debugger.IsAttached)
+                return;
+
+            var nl = Environment.NewLine;
+            var now = DateTime.UtcNow;
+            foreach (var info in connectionInfoMap.Values)
+                if ((now - info.CreationDatetime).Seconds > seconds)
+                    throw new DataException("An unclosed database connection has been detected." + nl + nl +
+                        "This exception is likely due to either 1) a bug in DatabaseRepository, " +
+                        "2) an undisposed Transaction returned from BeginTransaction, or " +
+                        "3) a bug in a class that extends DatabaseRepository.  This exception " +
+                        "can only thrown when a Debugger is attached to the running process " +
+                        "(so it should not appear in a live application)." + nl + nl +
+                        "Information About the Unclosed Connection" + nl +
+                        "Creation Date / Time: " + info.CreationDatetime + nl +
+                        "SQL Command(s) Executed..." + nl +
+                        string.Join(Environment.NewLine, info.SqlLog) + nl +
+                        "DatabaseRepository.CreationStack..." + nl +
+                        info.RepositoryCreationStack);
+        } // end method
+
+
+
         protected void CloseConnection() {
             if (connection != null) {
-                Log("Connection " + connectionId + " closed");
                 connection.Dispose();
+                Log("Connection " + connectionId + " closed");
+                connectionInfoMap.TryRemove(connectionId);
+                CheckForConnectionLeaks(300);
             } // end if
 
-            info = null;
             connection = null;
+            ConnectionInfo = null;
+            DatabaseInfo = null;
         } // end method
 
 
@@ -237,13 +291,24 @@ namespace Xanotech.Repository {
         protected IDbConnection Connection {
             get {
                 if (connection == null) {
-                    connectionId++;
-                    Log("Connection " + connectionId + " opened");
+                    CheckForConnectionLeaks(300);
+                    lock (nextConnectionIdLock)
+                        connectionId = nextConnectionId++;
                     connection = openConnectionFunc();
+                    Log("Connection " + connectionId + " opened");
+                    ConnectionInfo = new ConnectionInfo();
+                    ConnectionInfo.Id = connectionId;
+                    ConnectionInfo.CreationDatetime = DateTime.UtcNow;
+                    ConnectionInfo.RepositoryCreationStack = CreationStack;
+                    connectionInfoMap.TryAdd(connectionId, ConnectionInfo);
                 } // end function
                 return connection;
             } // end get
         } // end property
+
+
+
+        protected ConnectionInfo ConnectionInfo { get; private set; }
 
 
 
@@ -281,7 +346,7 @@ namespace Xanotech.Repository {
 
         public long Count<T>(IEnumerable<Criterion> criteria) where T : new() {
             try {
-                var tableNames = Info.GetTableNames(typeof(T));
+                var tableNames = DatabaseInfo.GetTableNames(typeof(T));
                 return Count(tableNames, criteria);
             } finally {
                 CloseConnection();
@@ -293,7 +358,7 @@ namespace Xanotech.Repository {
         public long Count<T>(long? id) where T : new() {
             try {
                 var type = typeof(T);
-                var idProperty = Info.GetIdProperty(type);
+                var idProperty = DatabaseInfo.GetIdProperty(type);
                 if (idProperty == null)
                     throw new DataException("The Repository.Count<T>(long?) method cannot be used for " +
                         type.FullName + " because does not have a single integer-based primary key or " +
@@ -356,7 +421,7 @@ namespace Xanotech.Repository {
             try {
                 cmd.CommandText = "DELETE FROM " + table;
                 AddWhereClause(cmd, new[] { table }, criteria);
-                Log(FormatLogMessage(cmd));
+                LogCommand(cmd);
                 return cmd;
             } catch {
                 // If any exceptions occur, Dispose cmd (since its IDisposable and all)
@@ -390,7 +455,7 @@ namespace Xanotech.Repository {
                 sql.Append(')');
 
                 cmd.CommandText = sql.ToString();
-                Log(FormatLogMessage(cmd));
+                LogCommand(cmd);
                 return cmd;
             } catch {
                 // If any exceptions occur, Dispose cmd (since its IDisposable and all)
@@ -404,11 +469,11 @@ namespace Xanotech.Repository {
 
         private object CreateLazyLoadEnumerable(Type type, Criterion criterion) {
             var lazyLoadType = typeof(LazyLoadEnumerable<>);
-            var mirror = Info.GetMirror(lazyLoadType);
+            var mirror = DatabaseInfo.GetMirror(lazyLoadType);
             var lazyLoadGenericType = mirror.MakeGenericType(type);
             var instance = Activator.CreateInstance(lazyLoadGenericType);
 
-            mirror = Info.GetMirror(lazyLoadGenericType);
+            mirror = DatabaseInfo.GetMirror(lazyLoadGenericType);
             var property = mirror.GetProperty("Criterion");
             property.SetValue(instance, criterion, null);
 
@@ -423,7 +488,7 @@ namespace Xanotech.Repository {
         private T CreateObject<T>(IDataReader dr) where T : new() {
             T obj = new T();
             var type = typeof(T);
-            var typeMirror = Info.GetMirror(type);
+            var typeMirror = DatabaseInfo.GetMirror(type);
             var schema = dr.GetSchemaTable();
             for (var i = 0; i < dr.FieldCount; i++) {
                 var name = (string)schema.Rows[i][0];
@@ -443,7 +508,7 @@ namespace Xanotech.Repository {
                 if (valType == typeof(DBNull))
                     val = null;
                 else {
-                    var propMirror = Info.GetMirror(prop.PropertyType);
+                    var propMirror = DatabaseInfo.GetMirror(prop.PropertyType);
                     if (!propMirror.IsAssignableFrom(valType))
                         val = ConvertValue(val, prop.PropertyType);
                 } // end if
@@ -496,8 +561,7 @@ namespace Xanotech.Repository {
                 AddWhereClause(cmd, tableNames, cursor.criteria);
                 AddOrderByClause(cmd, tableNames, cursor.sort);
                 AddPagingClause(cmd, tableNames.FirstOrDefault(), cursor);
-
-                Log(FormatLogMessage(cmd));
+                LogCommand(cmd);
                 return cmd;
             } catch {
                 // If any exceptions occur, Dispose cmd (since its IDisposable and all)
@@ -531,7 +595,7 @@ namespace Xanotech.Repository {
                 cmd.CommandText = sql.ToString();
                 AddWhereClause(cmd, new[] { table }, criteria);
 
-                Log(FormatLogMessage(cmd));
+                LogCommand(cmd);
                 return cmd;
             } catch {
                 // If any exceptions occur, Dispose cmd (since its IDisposable and all)
@@ -540,6 +604,10 @@ namespace Xanotech.Repository {
                 throw;
             } // end try-catch
         } // end method
+
+
+
+        public string CreationStack { get; private set; }
 
 
 
@@ -558,7 +626,7 @@ namespace Xanotech.Repository {
                     idCache = new Cache<Tuple<Type, long?>, object>();
 
                 IEnumerable<T> objs;
-                var tableNames = Info.GetTableNames(typeof(T));
+                var tableNames = DatabaseInfo.GetTableNames(typeof(T));
                 using (var cmd = CreateSelectCommand(tableNames, cursor, false))
                     objs = CreateObjects<T>(cmd, cursor);
                 foreach (var obj in objs) {
@@ -593,7 +661,7 @@ namespace Xanotech.Repository {
         public Cursor<T> Find<T>(long? id) where T : new() {
             try {
                 var type = typeof(T);
-                var idProperty = Info.GetIdProperty(type);
+                var idProperty = DatabaseInfo.GetIdProperty(type);
                 if (idProperty == null)
                     throw new DataException("The Repository.Find<T>(long?) method cannot be used for " +
                         type.FullName + " because does not have a single integer-based primary key or " +
@@ -693,7 +761,7 @@ namespace Xanotech.Repository {
 
 
         private long? GetId(object obj, out PropertyInfo idProperty) {
-            idProperty = Info.GetIdProperty(obj.GetType());
+            idProperty = DatabaseInfo.GetIdProperty(obj.GetType());
             if (idProperty == null)
                 return null;
             return idProperty.GetValue(obj, null) as long?;
@@ -703,8 +771,8 @@ namespace Xanotech.Repository {
 
         private IEnumerable<Criterion> GetPrimaryKeyCriteria(object obj, string tableName) {
             var type = obj.GetType();
-            var mirror = Info.GetMirror(type);
-            var primaryKeys = Info.GetPrimaryKeys(tableName);
+            var mirror = DatabaseInfo.GetMirror(type);
+            var primaryKeys = DatabaseInfo.GetPrimaryKeys(tableName);
             var properties = new List<PropertyInfo>();
             var criteriaMap = new Dictionary<string, object>();
             foreach (var key in primaryKeys) {
@@ -723,7 +791,7 @@ namespace Xanotech.Repository {
 
         private string GetTableForColumn(IEnumerable<string> tableNames, string column) {
             foreach (string tableName in tableNames) {
-                var schema = Info.GetSchemaTable(tableName);
+                var schema = DatabaseInfo.GetSchemaTable(tableName);
                 for (int r = 0; r < schema.Rows.Count; r++) {
                     var name = (string)schema.Rows[r][0];
                     if (column == name)
@@ -737,14 +805,13 @@ namespace Xanotech.Repository {
 
         private IDictionary<string, object> GetValues(object obj, string tableName) {
             var values = new Dictionary<string, object>();
-            var schema = Info.GetSchemaTable(tableName);
+            var schema = DatabaseInfo.GetSchemaTable(tableName);
             if (schema == null)
                 return values;
 
-            var mirror = Info.GetMirror(obj.GetType());
+            var mirror = DatabaseInfo.GetMirror(obj.GetType());
             for (int i = 0; i < schema.Rows.Count; i++) {
                 var key = (string)schema.Rows[i][0];
-                object value = null;
                 var prop = mirror.GetProperty(key);
                 if (prop != null)
                     values[key] = prop.GetValue(obj, null);
@@ -755,16 +822,21 @@ namespace Xanotech.Repository {
 
 
 
-        protected DatabaseInfo Info {
+        private DatabaseInfo databaseInfo;
+        protected DatabaseInfo DatabaseInfo {
             get {
-                if (info == null)
-                    info = new DatabaseInfo(Connection, s => Log(s));
-                return info;
+                if (databaseInfo == null)
+                    databaseInfo = new DatabaseInfo(Connection, s => Log(s));
+                return databaseInfo;
             } // end get
+            private set {
+                databaseInfo = value;
+            } // end set
         } // property
 
 
 
+        private Action<string> log;
         public Action<string> Log {
             get {
                 return log ?? DefaultLog;
@@ -776,6 +848,14 @@ namespace Xanotech.Repository {
 
 
 
+        protected void LogCommand(IDbCommand cmd) {
+            var msg = FormatLogMessage(cmd);
+            Log(msg);
+            ConnectionInfo.SqlLog.Add(msg);
+        } // end method
+
+
+
         private bool RecordExists(string table, IEnumerable<Criterion> keys) {
             return Count(new[] {table}, keys) > 0;
         } // end method
@@ -783,7 +863,7 @@ namespace Xanotech.Repository {
 
 
         private object ReflectedFindOne(Type type, long? id) {
-            var mirror = Info.GetMirror(GetType());
+            var mirror = DatabaseInfo.GetMirror(GetType());
             var method = mirror.GetMethod("FindOne", new[] { typeof(long?) });
             method = method.MakeGenericMethod(type);
             return method.Invoke(this, new object[] { id });
@@ -798,7 +878,7 @@ namespace Xanotech.Repository {
                     foreach (var item in enumerable)
                         Remove(item);
                 else {
-                    var tableNames = Info.GetTableNames(obj.GetType());
+                    var tableNames = DatabaseInfo.GetTableNames(obj.GetType());
                     foreach (var tableName in tableNames)
                         RemoveObjectFromTable(obj, tableName);
                 } // end if
@@ -826,7 +906,7 @@ namespace Xanotech.Repository {
                     foreach (var item in enumerable)
                         Save(item);
                 else {
-                    var tableNames = Info.GetTableNames(obj.GetType());
+                    var tableNames = DatabaseInfo.GetTableNames(obj.GetType());
                     foreach (var tableName in tableNames)
                         SaveObjectToTable(obj, tableName);
                 } // end if
@@ -841,9 +921,9 @@ namespace Xanotech.Repository {
             PropertyInfo idProperty;
             var id = GetId(obj, out idProperty);
             if (id == null && idProperty != null) {
-                if (Info.Sequencer == null)
-                    Info.Sequencer = new Sequencer(openConnectionFunc);
-                id = Info.Sequencer.GetNextValue(tableName, idProperty.Name);
+                if (DatabaseInfo.Sequencer == null)
+                    DatabaseInfo.Sequencer = new Sequencer(openConnectionFunc);
+                id = DatabaseInfo.Sequencer.GetNextValue(tableName, idProperty.Name);
                 idProperty.SetValue(obj, id, null);
             } // end if
 
@@ -859,7 +939,7 @@ namespace Xanotech.Repository {
 
 
         private void SetReferences<T>(IEnumerable<T> objs) {
-            var references = Info.GetReferences(typeof(T));
+            var references = DatabaseInfo.GetReferences(typeof(T));
             foreach (var obj in objs)
             foreach (var reference in references) {
                 if (reference.IsMany) {

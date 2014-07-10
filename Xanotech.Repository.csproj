@@ -39,6 +39,7 @@
     <Reference Include="System.XML" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ConnectionInfo.cs" />
     <Compile Include="DatabaseInfoCache.cs" />
     <Compile Include="DatabaseRepository.cs" />
     <Compile Include="DatabaseInfo.cs" />
