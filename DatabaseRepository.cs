@@ -50,8 +50,7 @@ namespace Xanotech.Repository {
         ///   The idCache is used exclusively when retrieving objects from
         ///   the database and only exists for the current thread.
         /// </summary>
-        [ThreadStatic]
-        private static Cache<Tuple<Type, long?>, object> idCache;
+        private Cache<Tuple<Type, long?>, object> idCache;
 
         /// <summary>
         ///   The Func used for creating / opening a new connection (provided during construction).
@@ -249,6 +248,19 @@ namespace Xanotech.Repository {
 
 
 
+        private void ApplySequenceId(object obj, string tableName) {
+            PropertyInfo idProperty;
+            var id = GetId(obj, out idProperty);
+            if (id == null && idProperty != null) {
+                if (DatabaseInfo.Sequencer == null)
+                    DatabaseInfo.Sequencer = new Sequencer(openConnectionFunc);
+                id = DatabaseInfo.Sequencer.GetNextValue(tableName, idProperty.Name);
+                idProperty.SetValue(obj, id, null);
+            } // end if
+        } // end method
+
+
+
         private static void CheckForConnectionLeaks(int seconds) {
             if (!Debugger.IsAttached)
                 return;
@@ -420,7 +432,7 @@ namespace Xanotech.Repository {
             var cmd = Connection.CreateCommand();
             try {
                 cmd.CommandText = "DELETE FROM " + table;
-                AddWhereClause(cmd, new[] { table }, criteria);
+                AddWhereClause(cmd, new[] {table}, criteria);
                 LogCommand(cmd);
                 return cmd;
             } catch {
@@ -505,7 +517,7 @@ namespace Xanotech.Repository {
                 // DBNull objects are turned into "null" and all other values
                 // are converted to the PropertyType if the valType cannot be
                 // assigned to the PropertyType
-                if (valType == typeof(DBNull))
+                if (val == DBNull.Value)
                     val = null;
                 else {
                     var propMirror = DatabaseInfo.GetMirror(prop.PropertyType);
@@ -614,6 +626,16 @@ namespace Xanotech.Repository {
         private static void DefaultLog(string msg) {
             if (Debugger.IsAttached)
                 Debug.WriteLine("[" + typeof(DatabaseRepository).FullName + "] " + msg);
+        } // end method
+
+
+
+        private static void DisposeMappedCommands(Dictionary<Type, IDictionary<string, IDbCommand>> commandMap) {
+            foreach (var subMap in commandMap.Values)
+            if (subMap != null)
+            foreach (var cmd in subMap.Values)
+            if (cmd != null)
+                cmd.Dispose();
         } // end method
 
 
@@ -740,11 +762,10 @@ namespace Xanotech.Repository {
 
             msg.Append(Environment.NewLine);
             var isAfterFirst = false;
-            foreach (var obj in cmd.Parameters) {
+            foreach (IDbDataParameter parameter in cmd.Parameters) {
                 if (isAfterFirst)
                     msg.Append(", ");
 
-                var parameter = obj as IDbDataParameter;
                 msg.Append('@' + parameter.ParameterName + " = " + parameter.Value.ToSqlString());
                 isAfterFirst = true;
             } // end foreach
@@ -765,6 +786,27 @@ namespace Xanotech.Repository {
             if (idProperty == null)
                 return null;
             return idProperty.GetValue(obj, null) as long?;
+        } // end method
+
+
+
+        private IDbCommand GetMappedCommand(IDictionary<Type, IDictionary<string, IDbCommand>> commandMap,
+            Type type, string tableName, IDictionary<string, object> values, Func<IDbCommand> createCmdFunc) {
+            IDbCommand cmd;
+            if (commandMap[type].ContainsKey(tableName)) {
+                cmd = commandMap[type][tableName];
+                foreach (IDbDataParameter parameter in cmd.Parameters)
+                    parameter.Value = values[parameter.ParameterName] ?? DBNull.Value;
+
+                // Only explicity log here (when the command exists after parameters
+                // are set) because CreateDeleteCommand already logs the command.
+                LogCommand(cmd);
+            } else {
+                cmd = createCmdFunc();
+                cmd.Prepare();
+                commandMap[type][tableName] = cmd;
+            } // end if-else
+            return cmd;
         } // end method
 
 
@@ -872,68 +914,132 @@ namespace Xanotech.Repository {
 
 
         public void Remove(object obj) {
-            try {
-                var enumerable = obj as IEnumerable;
-                if (enumerable != null)
-                    foreach (var item in enumerable)
-                        Remove(item);
-                else {
-                    var tableNames = DatabaseInfo.GetTableNames(obj.GetType());
-                    foreach (var tableName in tableNames)
-                        RemoveObjectFromTable(obj, tableName);
-                } // end if
-            } finally {
-                CloseConnection();
-            } // end try-finally
+            var enumerable = obj as IEnumerable;
+            if (enumerable == null)
+                enumerable = new[] {obj};
+            RemoveRange(enumerable);
         } // end method
 
 
 
-        private void RemoveObjectFromTable(object obj, string tableName) {
-            var keys = GetPrimaryKeyCriteria(obj, tableName);
-            if (RecordExists(tableName, keys)) {
-                using (var cmd = CreateDeleteCommand(tableName, keys))
-                    cmd.ExecuteNonQuery();
-            } // end if
+        private void RemoveRange(IEnumerable enumerable) {
+            // Used for storing prepared statements to be used repeatedly
+            var cmdMap = new Dictionary<Type, IDictionary<string, IDbCommand>>();
+            try {
+                // For each object and for each of that objects associate tables,
+                // use the object's primary keys as parameters for a delete query.
+                // Commands created for first Type / tableName combination are
+                // prepared (compiled) and then stored in cmdMap to be used again
+                // for other objects.
+                foreach (var obj in enumerable) {
+                    var type = obj.GetType();
+                    if (!cmdMap.ContainsKey(type))
+                        cmdMap[type] = new Dictionary<string, IDbCommand>();
+
+                    var tableNames = DatabaseInfo.GetTableNames(type);
+                    foreach (var tableName in tableNames) {
+                        var criteria = GetPrimaryKeyCriteria(obj, tableName);
+
+                        // If the keys criteria has a null value, then the operator will be
+                        // "IS" or "IS NOT" instead of "=" or "<>" making the query usable only
+                        // once.  In that case, simply create the cmd, run it, and dispose it.
+                        // Otherwise, use the cmdMap.  If the cmd required doesn't exist
+                        // in the cmdMap, create it, prepare it, and add it.  If the cmd
+                        // does exist, change the parameters to the object's keys.
+                        if (criteria.HasNullValue())
+                            using (var cmd = CreateDeleteCommand(tableName, criteria))
+                                cmd.ExecuteNonQuery();
+                        else {
+                            var cmd = GetMappedCommand(cmdMap, type, tableName, criteria.ToDictionary(),
+                                () => { return CreateDeleteCommand(tableName, criteria); });
+                            cmd.ExecuteNonQuery();
+                        } // end else
+                    } // end foreach
+                } // end foreach
+            } finally {
+                foreach (var subMap in cmdMap.Values)
+                    foreach (var cmd in subMap.Values)
+                        cmd.Dispose();
+                CloseConnection();
+            } // end try-finally
         } // end method
 
 
 
         public void Save(object obj) {
-            try {
-                var enumerable = obj as IEnumerable;
-                if (enumerable != null)
-                    foreach (var item in enumerable)
-                        Save(item);
-                else {
-                    var tableNames = DatabaseInfo.GetTableNames(obj.GetType());
-                    foreach (var tableName in tableNames)
-                        SaveObjectToTable(obj, tableName);
-                } // end if
-            } finally {
-                CloseConnection();
-            } // end try-finally
+            var enumerable = obj as IEnumerable;
+            if (enumerable == null)
+                enumerable = new[] { obj };
+            SaveRange(enumerable);
         } // end method
 
 
 
-        private void SaveObjectToTable<T>(T obj, string tableName) {
-            PropertyInfo idProperty;
-            var id = GetId(obj, out idProperty);
-            if (id == null && idProperty != null) {
-                if (DatabaseInfo.Sequencer == null)
-                    DatabaseInfo.Sequencer = new Sequencer(openConnectionFunc);
-                id = DatabaseInfo.Sequencer.GetNextValue(tableName, idProperty.Name);
-                idProperty.SetValue(obj, id, null);
-            } // end if
+        private void SaveRange(IEnumerable enumerable) {
+            // Used for storing prepared statements to be used repeatedly
+            var countCmdMap = new Dictionary<Type, IDictionary<string, IDbCommand>>();
+            var insertCmdMap = new Dictionary<Type, IDictionary<string, IDbCommand>>();
+            var updateCmdMap = new Dictionary<Type, IDictionary<string, IDbCommand>>();
+            try {
+                foreach (var obj in enumerable) {
+                    var type = obj.GetType();
+                    if (!countCmdMap.ContainsKey(type))
+                        countCmdMap[type] = new Dictionary<string, IDbCommand>();
+                    if (!insertCmdMap.ContainsKey(type))
+                        insertCmdMap[type] = new Dictionary<string, IDbCommand>();
+                    if (!updateCmdMap.ContainsKey(type))
+                        updateCmdMap[type] = new Dictionary<string, IDbCommand>();
 
-            var criteria = GetPrimaryKeyCriteria(obj, tableName);
-            var values = GetValues(obj, tableName);
+                    var tableNames = DatabaseInfo.GetTableNames(type);
+                    foreach (var tableName in tableNames) {
+                        ApplySequenceId(obj, tableName);
+                        var criteria = GetPrimaryKeyCriteria(obj, tableName);
+                        var values = GetValues(obj, tableName);
 
-            using (var cmd = RecordExists(tableName, criteria) ?
-                CreateUpdateCommand(tableName, values, criteria) :
-                CreateInsertCommand(tableName, values))
-                cmd.ExecuteNonQuery();
+                        var criteriaAndValues = new Dictionary<string, object>(values);
+                        criteriaAndValues.AddRange(criteria.ToDictionary());
+
+                        // If the keys criteria has a null value, then the operator will be
+                        // "IS" or "IS NOT" instead of "=" or "<>" making the query usable only
+                        // once.  In that case, simply create the cmd, run it, and dispose it.
+                        // Otherwise, use the cmdMap.  If the cmd required doesn't exist
+                        // in the cmdMap, create it, prepare it, and add it.  If the cmd
+                        // does exist, change the parameters to the object's keys.
+                        object result;
+                        long? count;
+                        if (criteria.HasNullValue()) {
+                            var cursor = new Cursor<object>(criteria, Fetch, this);
+                            using (var cmd = CreateSelectCommand(tableNames, cursor, true))
+                                result = cmd.ExecuteScalar();
+                            count = result as long? ?? result as int? ?? 0;
+                            using (var cmd = count == 0 ?
+                                CreateInsertCommand(tableName, values) :
+                                CreateUpdateCommand(tableName, values, criteria))
+                                cmd.ExecuteNonQuery();
+                        } else {
+                            var cursor = new Cursor<object>(criteria, Fetch, this);
+                            IDbCommand cmd = GetMappedCommand(countCmdMap, type, tableName, criteria.ToDictionary(),
+                                () => { return CreateSelectCommand(tableNames, cursor, true); });
+                            result = cmd.ExecuteScalar();
+                            count = result as long? ?? result as int? ?? 0;
+
+                            if (count == 0)
+                                cmd = GetMappedCommand(insertCmdMap, type, tableName, criteriaAndValues,
+                                    () => { return CreateInsertCommand(tableName, values); });
+                            else
+                                cmd = GetMappedCommand(updateCmdMap, type, tableName, criteriaAndValues,
+                                    () => { return CreateUpdateCommand(tableName, values, criteria); });
+                            cmd.ExecuteNonQuery();
+                        } // end else
+
+                    } // end foreach
+                } // end foreach
+            } finally {
+                DisposeMappedCommands(countCmdMap);
+                DisposeMappedCommands(insertCmdMap);
+                DisposeMappedCommands(updateCmdMap);
+                CloseConnection();
+            } // end try-finally
         } // end method
 
 

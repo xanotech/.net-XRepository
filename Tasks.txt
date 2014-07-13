@@ -1,11 +1,9 @@
-o Determine if idCache needs to be static [ThreadStatic]
-o Reuse commands when updating, inserting, or deleting collections of objects
 o Refactor DatabaseRepository code
     - Determine which columns are mapped (auto or otherwise) and build select instead of SELECT *
     - Improve Auto Mapping to look for property name based on name of foreign key instead of just "Id".  Also, have it look for both root table name + key name and just the key name.  Rule out any types with more than one Primary Key Column.
     - Improve Reference Initialization (options follow)...
         . Allow for "No Reference Initialization" when calling Find
-        . Pull related objects in bulk based on primary keys instead of singple pulls
+        . Pull related objects in bulk based on primary keys instead of single pulls
         . Create Join method in Cursor that pulls and relates related objects
     - Change sequencer to use concurrent collections
     - Create 2 more Sequencers
