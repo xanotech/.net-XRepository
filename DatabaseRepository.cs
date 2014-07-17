@@ -226,6 +226,42 @@ namespace Xanotech.Repository {
 
 
 
+        private void AddSelectClause<T>(IDbCommand cmd, IEnumerable<string> tableNames, bool countOnly) {
+            var mirror = DatabaseInfo.GetMirror(typeof(T));
+            if (countOnly)
+                cmd.CommandText = "SELECT COUNT(*) FROM ";
+            else {
+                var sql = new StringBuilder("SELECT ");
+                bool isAfterFirst = false;
+                var valuesOnLineCount = 0;
+                foreach (var tableName in tableNames) {
+                    var schema = DatabaseInfo.GetSchemaTable(tableName);
+                    for (int i = 0; i < schema.Rows.Count; i++) {
+                        var key = (string)schema.Rows[i][0];
+                        var prop = mirror.GetProperty(key);
+                        if (prop == null)
+                            continue;
+
+                        if (isAfterFirst) {
+                            sql.Append(',');
+                            if (valuesOnLineCount == 4) {
+                                sql.Append(Environment.NewLine);
+                                valuesOnLineCount = 0;
+                            } else
+                                sql.Append(' ');
+                        } // end if
+                        valuesOnLineCount++;
+                        sql.Append(tableName + '.' + key);
+                        isAfterFirst = true;
+                    } // end if
+                } // end foreach
+                sql.Append(Environment.NewLine + "FROM ");
+                cmd.CommandText = sql.ToString();
+            } // end if-else
+        } // end method
+
+
+
         private void AddWhereClause(IDbCommand cmd, IEnumerable<string> tableNames,
             IEnumerable<Criterion> criteria) {
             if (criteria == null)
@@ -450,16 +486,16 @@ namespace Xanotech.Repository {
             try {
                 var sql = new StringBuilder("INSERT INTO " + table + Environment.NewLine + "(");
                 var valueString = new StringBuilder();
-                string lastColumn = null;
+                bool isAfterFirst = false;
                 foreach (var column in values.Keys) {
-                    if (lastColumn != null) {
+                    if (isAfterFirst) {
                         sql.Append(", ");
                         valueString.Append(", ");
                     } // end if
                     sql.Append(column);
                     valueString.Append('@' + column);
                     cmd.AddParameter(column, values[column]);
-                    lastColumn = column;
+                    isAfterFirst = true;
                 } // end for
 
                 sql.Append(")" + Environment.NewLine + "VALUES" + Environment.NewLine + "(");
@@ -568,7 +604,7 @@ namespace Xanotech.Repository {
             where T : new() {
             var cmd = Connection.CreateCommand();
             try {
-                cmd.CommandText = countOnly ? "SELECT COUNT(*) FROM " : "SELECT * FROM ";
+                AddSelectClause<T>(cmd, tableNames, countOnly);
                 AddFromClause(cmd, tableNames);
                 AddWhereClause(cmd, tableNames, cursor.criteria);
                 AddOrderByClause(cmd, tableNames, cursor.sort);
@@ -593,16 +629,16 @@ namespace Xanotech.Repository {
                 var sql = new StringBuilder("UPDATE " + table + " SET" + Environment.NewLine);
 
                 var primaryKeyColumns = criteria.Select(c => c.Name);
-                string lastColumn = null;
+                bool isAfterFirst = false;
                 foreach (string column in values.Keys) {
                     if (primaryKeyColumns.Contains(column))
                         continue;
 
-                    if (lastColumn != null)
+                    if (isAfterFirst)
                         sql.Append("," + Environment.NewLine);
                     sql.Append(column + " = @" + column);
                     cmd.AddParameter(column, values[column]);
-                    lastColumn = column;
+                    isAfterFirst = true;
                 } // end foreach
                 cmd.CommandText = sql.ToString();
                 AddWhereClause(cmd, new[] { table }, criteria);
@@ -953,7 +989,7 @@ namespace Xanotech.Repository {
                             var cmd = GetMappedCommand(cmdMap, type, tableName, criteria.ToDictionary(),
                                 () => { return CreateDeleteCommand(tableName, criteria); });
                             cmd.ExecuteNonQuery();
-                        } // end else
+                        } // end if-else
                     } // end foreach
                 } // end foreach
             } finally {
@@ -1030,7 +1066,7 @@ namespace Xanotech.Repository {
                                 cmd = GetMappedCommand(updateCmdMap, type, tableName, criteriaAndValues,
                                     () => { return CreateUpdateCommand(tableName, values, criteria); });
                             cmd.ExecuteNonQuery();
-                        } // end else
+                        } // end if-else
 
                     } // end foreach
                 } // end foreach

@@ -134,31 +134,31 @@ namespace Xanotech.Repository {
             var isAfterFirst = false;
             var valueCount = 0;
             var valuesOnLineCount = 0;
-            var sqlStr = new StringBuilder("(");
+            var sql = new StringBuilder("(");
             foreach (var value in enumerable) {
                 if (isAfterFirst) {
-                    sqlStr.Append(',');
+                    sql.Append(',');
                     if (valuesOnLineCount == 8) {
-                        sqlStr.Append(Environment.NewLine);
+                        sql.Append(Environment.NewLine);
                         valuesOnLineCount = 0;
                     } else
-                        sqlStr.Append(' ');
+                        sql.Append(' ');
                 } // end if
 
                 if (useParameters) {
                     var parameterName = Name + valueCount;
-                    sqlStr.Append('@' + parameterName);
+                    sql.Append('@' + parameterName);
                     if (cmd != null)
                         cmd.AddParameter(parameterName, value);
                 } else
-                    sqlStr.Append(value.ToSqlString());
+                    sql.Append(value.ToSqlString());
 
                 isAfterFirst = true;
                 valueCount++;
                 valuesOnLineCount++;
-            }
-            sqlStr.Append(")");
-            return sqlStr.ToString();
+            } // end foreach
+            sql.Append(")");
+            return sql.ToString();
         } // end method
 
 
