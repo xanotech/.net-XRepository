@@ -1,11 +1,14 @@
 o Refactor DatabaseRepository code
-    - Determine which columns are mapped (auto or otherwise) and build select instead of SELECT *
-    - Improve Auto Mapping to look for property name based on name of foreign key instead of just "Id".  Also, have it look for both root table name + key name and just the key name.  Rule out any types with more than one Primary Key Column.
+    - Look at uses of GetTableNames to see why the list is reversed.
+    - Improve Auto Mapping to look for property name based on name of foreign key instead of just "Id".
+      Also, have it look for both root table name + key name and just the key name.  Rule out any types with more than one Primary Key Column.
+    - Look at all string comparisons and possibly replace == with .Is
+      (Remember to consider string's .Remove and .Replace methods).
     - Improve Reference Initialization (options follow)...
         . Allow for "No Reference Initialization" when calling Find
         . Pull related objects in bulk based on primary keys instead of single pulls
         . Create Join method in Cursor that pulls and relates related objects
-    - Change sequencer to use concurrent collections
+    - Change sequencer to use collections from System.Collections.Concurrent
     - Create 2 more Sequencers
         . TableSequencer (uses table with database locking for ids)
         . WebSequencer (uses external web site which will be backed by TableSequencer)

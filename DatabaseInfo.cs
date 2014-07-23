@@ -30,21 +30,62 @@ namespace Xanotech.Repository {
 
 
 
-        private PropertyInfo FindIdProperty(Type type) {
-            var tableNames = GetTableNames(type);
-            if (!tableNames.Any())
+        private Reference CreateReference(PropertyInfo property) {
+            // If a property is an Array, if it is "basic", or if
+            // it's ready only, then it can't be a reference property.
+            if (property.PropertyType.IsArray ||
+                property.PropertyType.IsBasic() ||
+                property.GetSetMethod() == null)
                 return null;
 
-            var keys = GetPrimaryKeys(tableNames.First());
+            string prefix;
+            Type referencedType, primaryType, foreignType;
+            var isMany = true;
+            if (property.PropertyType.IsGenericType &&
+                property.PropertyType.GetGenericTypeDefinition() == typeof(IEnumerable<>)) {
+                referencedType = property.PropertyType.GetGenericArguments()[0];
+                if (referencedType.IsBasic())
+                    return null;
+
+                primaryType = property.DeclaringType;
+                foreignType = referencedType;
+                prefix = primaryType.Name;
+            } else {
+                isMany = false;
+                referencedType = property.PropertyType;
+                primaryType = property.PropertyType;
+                foreignType = property.DeclaringType;
+                prefix = property.Name;
+            } // end if
+
+            // Validate the referencedType and make sure that at least
+            // one of the tableNames (if it has any) has a SchemaTable
+            // demonstrating that it one or more database tables.
+            var tableNames = GetTableNames(referencedType);
+            if (tableNames.All(tn => GetSchemaTable(tn) == null))
+                return null;
+
+            var keyProperty = FindReferenceKeyProperty(prefix, primaryType, foreignType);
+            if (keyProperty == null)
+                return null;
+
+            var reference = new Reference();
+            reference.IsMany = isMany;
+            reference.KeyProperty = keyProperty;
+            reference.ValueProperty = property;
+            reference.ReferencedType = referencedType;
+            return reference;
+        } // end Method
+
+
+
+        private PropertyInfo FindIdProperty(Type type) {
+            var keys = GetPrimaryKeys(type);
             if (keys.Count() != 1)
                 return null;
 
             var mirror = GetMirror(type);
-            var property = mirror.GetProperty(keys.FirstOrDefault());
-            if (typeof(long?).IsAssignableFrom(property.PropertyType))
-                return property;
-            else
-                return null;
+            return mirror.GetProperty(keys.FirstOrDefault());
         } // end method
 
 
@@ -93,46 +134,38 @@ namespace Xanotech.Repository {
 
 
 
+        private PropertyInfo FindReferenceKeyProperty(string prefix, Type primaryType, Type foreignType) {
+            var keys = GetPrimaryKeys(primaryType);
+            if (keys.Count() != 1)
+                return null;
+
+            var tableNames = GetTableNames(primaryType);
+            var keyName = keys.First();
+            foreach (var name in tableNames)
+                keyName = keyName.Remove(name); // TODO: Make this case-insensitive
+            keyName = prefix + keyName;
+
+            var mirror = GetMirror(foreignType);
+            var keyProp = mirror.GetProperty(keyName, BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public);
+            if (keyProp == null) {
+                keyName = keys.First();
+                keys = GetPrimaryKeys(foreignType);
+                if (!(keys.Count() == 1 && keys.First() == keyName))
+                    keyProp = mirror.GetProperty(keyName, BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public);
+            } // end if
+            return keyProp;
+        } // end method
+
+
+
         private IEnumerable<Reference> FindReferences(Type type) {
             var references = new List<Reference>();
             var mirror = mirrorCache[type];
             var properties = mirror.GetProperties();
             foreach (var property in properties) {
-                if (property.PropertyType.IsArray ||
-                    property.PropertyType.IsBasic() ||
-                    property.GetSetMethod() == null)
-                    continue;
-
-                if (property.PropertyType.IsGenericType &&
-                    property.PropertyType.GetGenericTypeDefinition() == typeof(IEnumerable<>)) {
-                    var enumType = property.PropertyType.GetGenericArguments()[0];
-                    if (enumType.IsBasic())
-                        continue;
-
-                    var tableNames = GetTableNames(enumType);
-                    if (!tableNames.Any(tn => GetSchemaTable(tn) != null))
-                        continue;
-
-                    var reference = new Reference();
-                    reference.Property = property;
-                    reference.ReferencedType = enumType;
-                    reference.ReferencingType = property.DeclaringType;
+                var reference = CreateReference(property);
+                if (reference != null)
                     references.Add(reference);
-                } else {
-                    var tableNames = GetTableNames(property.PropertyType);
-                    if (!tableNames.Any(tn => GetSchemaTable(tn) != null))
-                        continue;
-
-                    var idProp = properties.FirstOrDefault(p => p.Name == property.Name + "Id");
-                    if (idProp == null)
-                        continue;
-
-                    var reference = new Reference();
-                    reference.Property = property;
-                    reference.ReferencedType = property.PropertyType;
-                    reference.ReferencingProperty = idProp;
-                    references.Add(reference);
-                } // end if-else
             } // end foreach
             return references;
         } // end method
@@ -242,6 +275,20 @@ namespace Xanotech.Repository {
 
             var info = infoCache[connection.ConnectionString];
             return info.primaryKeysCache.GetValue(tableName.ToUpper(), FindPrimaryKeys);
+        } // end method
+
+
+
+        public IEnumerable<string> GetPrimaryKeys(Type type) {
+            if (type == null)
+                throw new ArgumentNullException("type", "The type parameter was null.");
+
+            var info = infoCache[connection.ConnectionString];
+            var tableNames = GetTableNames(type);
+            if (tableNames.Any())
+                return GetPrimaryKeys(tableNames.Last());
+            else
+                return new string[0];
         } // end method
 
 

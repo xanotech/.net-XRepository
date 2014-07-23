@@ -10,13 +10,11 @@ namespace Xanotech.Repository {
 
         Cursor<T> Find<T>() where T : new();
         Cursor<T> Find<T>(IEnumerable<Criterion> criteria) where T : new();
-        Cursor<T> Find<T>(long? id) where T : new();
         Cursor<T> Find<T>(object criteria) where T : new();
         Cursor<T> Find<T>(params Criterion[] criteria) where T : new();
 
         T FindOne<T>() where T : new();
         T FindOne<T>(IEnumerable<Criterion> criteria) where T : new();
-        T FindOne<T>(long? id) where T : new();
         T FindOne<T>(object criteria) where T : new();
         T FindOne<T>(params Criterion[] criteria) where T : new();
 

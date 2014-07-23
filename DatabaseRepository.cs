@@ -50,7 +50,7 @@ namespace Xanotech.Repository {
         ///   The idCache is used exclusively when retrieving objects from
         ///   the database and only exists for the current thread.
         /// </summary>
-        private Cache<Tuple<Type, long?>, object> idCache;
+        private Cache<Tuple<Type, object>, object> idCache;
 
         /// <summary>
         ///   The Func used for creating / opening a new connection (provided during construction).
@@ -286,7 +286,7 @@ namespace Xanotech.Repository {
 
         private void ApplySequenceId(object obj, string tableName) {
             PropertyInfo idProperty;
-            var id = GetId(obj, out idProperty);
+            var id = GetIntId(obj, out idProperty);
             if (id == null && idProperty != null) {
                 if (DatabaseInfo.Sequencer == null)
                     DatabaseInfo.Sequencer = new Sequencer(openConnectionFunc);
@@ -681,7 +681,7 @@ namespace Xanotech.Repository {
             try {
                 bool wasNull = idCache == null;
                 if (wasNull)
-                    idCache = new Cache<Tuple<Type, long?>, object>();
+                    idCache = new Cache<Tuple<Type, object>, object>();
 
                 IEnumerable<T> objs;
                 var tableNames = DatabaseInfo.GetTableNames(typeof(T));
@@ -689,7 +689,7 @@ namespace Xanotech.Repository {
                     objs = CreateObjects<T>(cmd, cursor);
                 foreach (var obj in objs) {
                     var id = GetId(obj);
-                    idCache.GetValue(new Tuple<Type, long?>(obj.GetType(), id), () => obj);
+                    idCache.GetValue(new Tuple<Type, object>(obj.GetType(), id), () => obj);
                 } // end foreach
                 SetReferences(objs);
 
@@ -716,23 +716,27 @@ namespace Xanotech.Repository {
 
 
 
-        public Cursor<T> Find<T>(long? id) where T : new() {
-            try {
+        public Cursor<T> Find<T>(object criteria) where T : new() {
+            if (criteria == null)
+                return Find<T>((IEnumerable<Criterion>)null);
+            else if (criteria.GetType().IsBasic()) try {
                 var type = typeof(T);
                 var idProperty = DatabaseInfo.GetIdProperty(type);
-                if (idProperty == null)
-                    throw new DataException("The Repository.Find<T>(long?) method cannot be used for " +
+                if (idProperty == null) {
+                    var value = criteria.ToBasicString();
+                    if (type == typeof(string) || type == typeof(DateTime) || type == typeof(DateTime?))
+                        value = '"' + value + '"';
+                    else if (type == typeof(char) || type == typeof(char?))
+                        value = "'" + value + "'";
+                    throw new DataException("Repository.Find<T>(" + value + ") method cannot be used for " +
                         type.FullName + " because does not have a single integer-based primary key or " +
                         "a property that corresponds to the primary key.");
-                return Find<T>(new Criterion(idProperty.Name, "=", id));
+                } // end if
+                return Find<T>(new Criterion(idProperty.Name, "=", criteria));
             } finally {
                 CloseConnection();
             } // end try-finally
-        } // end method
 
-
-
-        public Cursor<T> Find<T>(object criteria) where T : new() {
             var enumerable = Criterion.Create(criteria);
             return Find<T>(enumerable);
         } // end method
@@ -757,12 +761,6 @@ namespace Xanotech.Repository {
 
 
 
-        public T FindOne<T>(long? id) where T : new() {
-            return Find<T>(id).Limit(1).FirstOrDefault();
-        } // end method
-
-
-
         public T FindOne<T>(object criteria) where T : new() {
             return Find<T>(criteria).Limit(1).FirstOrDefault();
         } // end method
@@ -776,12 +774,11 @@ namespace Xanotech.Repository {
         
         
         private static string FormatColumnName(string name) {
-            // Extract the name from the reader's schema.
-            // Fields with the same name in multiple tables
-            // selected (usually "Id") will be preceded by the
-            // table name and a ".".  For instance, if Employee
-            // extends from Person, the names "Person.Id" and
-            // "Employee.Id" will be column names.
+            // Extract the name from the reader's schema.  Fields with
+            // the same name in multiple tables selected (usually the
+            // primary key) will be preceded by the table name and a ".".
+            // For instance, if Employee extends from Person, the names
+            // "Person.Id" and "Employee.Id" will be column names.
             // Strip the preceding table name and ".".
             var index = name.LastIndexOf('.');
             if (index > -1)
@@ -810,18 +807,34 @@ namespace Xanotech.Repository {
 
 
 
-        private long? GetId<T>(T obj) {
+        private object GetId(object obj) {
             PropertyInfo idProperty;
             return GetId(obj, out idProperty);
         } // end method
 
 
 
-        private long? GetId(object obj, out PropertyInfo idProperty) {
+        private object GetId(object obj, out PropertyInfo idProperty) {
             idProperty = DatabaseInfo.GetIdProperty(obj.GetType());
             if (idProperty == null)
                 return null;
-            return idProperty.GetValue(obj, null) as long?;
+            return idProperty.GetValue(obj, null);
+        } // end method
+
+
+
+        private long? GetIntId(object obj) {
+            return GetId(obj) as long?;
+        } // end method
+
+
+
+        private long? GetIntId(object obj, out PropertyInfo idProperty) {
+            var id = GetId(obj, out idProperty) as long?;
+            if (idProperty != null &&
+                !typeof(long?).IsAssignableFrom(idProperty.PropertyType))
+                idProperty = null;
+            return id;
         } // end method
 
 
@@ -940,9 +953,9 @@ namespace Xanotech.Repository {
 
 
 
-        private object ReflectedFindOne(Type type, long? id) {
+        private object ReflectedFindOne(Type type, object id) {
             var mirror = DatabaseInfo.GetMirror(GetType());
-            var method = mirror.GetMethod("FindOne", new[] { typeof(long?) });
+            var method = mirror.GetMethod("FindOne", new[] { typeof(object) });
             method = method.MakeGenericMethod(type);
             return method.Invoke(this, new object[] { id });
         } // end method
@@ -1089,22 +1102,17 @@ namespace Xanotech.Repository {
                     if (id == null)
                         continue;
 
-                    Criterion criterion = new Criterion(reference.ReferencingType.Name + "Id", "=", id);
+                    Criterion criterion = new Criterion(reference.KeyProperty.Name, "=", id);
                     var lazyLoadEnum = CreateLazyLoadEnumerable(reference.ReferencedType, criterion);
-                    reference.Property.SetValue(obj, lazyLoadEnum, null);
+                    reference.ValueProperty.SetValue(obj, lazyLoadEnum, null);
                 } else {
-                    long? id = null;
-                    try {
-                        id = (long)reference.ReferencingProperty.GetValue(obj, null);
-                    } catch {
-                        continue;
-                    } // end try-catch
+                    var id = reference.KeyProperty.GetValue(obj, null);
                     if (id == null)
                         continue;
 
-                    object referenceObj = idCache.GetValue(new Tuple<Type, long?>(reference.ReferencedType, id),
+                    object referenceObj = idCache.GetValue(new Tuple<Type, object>(reference.ReferencedType, id),
                         () => ReflectedFindOne(reference.ReferencedType, id));
-                    reference.Property.SetValue(obj, referenceObj, null);
+                    reference.ValueProperty.SetValue(obj, referenceObj, null);
                 } // end if-else
             } // end foreach
         } // end method

@@ -1,26 +1,26 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using Xanotech.Tools;
 
 namespace Xanotech.Repository {
     class Reference {
 
-        internal bool IsMany {
-            get { return ReferencingType != null; }
-        } // end property
+        internal bool IsMany { get; set; } // end property
 
 
 
         internal bool IsOne {
-            get { return ReferencingProperty != null; }
+            get { return !IsMany; }
+            set { IsMany = !value; }
         } // end property
 
 
 
-        internal PropertyInfo Property { get; set; }
+        internal PropertyInfo KeyProperty { get; set; }
+        internal PropertyInfo ValueProperty { get; set; }
         internal Type ReferencedType { get; set; }
-        internal PropertyInfo ReferencingProperty { get; set; }
-        internal Type ReferencingType { get; set; }
 
     } // end class
 } // end namespace
