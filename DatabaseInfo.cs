@@ -15,6 +15,9 @@ namespace Xanotech.Repository {
             OffsetFetchFirst // SQL Server: SELECT * FROM SomeTable ORDER BY SomeColumn OFFSET 20 ROWS FETCH FIRST 10 ROWS ONLY
         } // end enum
 
+        private const BindingFlags CaseInsensitiveBinding =
+            BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public;
+
         private static Cache<string, DatabaseInfoCache> infoCache = new Cache<string, DatabaseInfoCache>(s => new DatabaseInfoCache());
         private static Cache<Type, Mirror> mirrorCache = new Cache<Type, Mirror>(t => new Mirror(t));
 
@@ -85,7 +88,7 @@ namespace Xanotech.Repository {
                 return null;
 
             var mirror = GetMirror(type);
-            return mirror.GetProperty(keys.FirstOrDefault());
+            return mirror.GetProperty(keys.FirstOrDefault(), CaseInsensitiveBinding);
         } // end method
 
 
@@ -142,16 +145,16 @@ namespace Xanotech.Repository {
             var tableNames = GetTableNames(primaryType);
             var keyName = keys.First();
             foreach (var name in tableNames)
-                keyName = keyName.Remove(name); // TODO: Make this case-insensitive
+                keyName = keyName.RemoveIgnoreCase(name); // TODO: Make this case-insensitive
             keyName = prefix + keyName;
 
             var mirror = GetMirror(foreignType);
-            var keyProp = mirror.GetProperty(keyName, BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public);
+            var keyProp = mirror.GetProperty(keyName, CaseInsensitiveBinding);
             if (keyProp == null) {
                 keyName = keys.First();
                 keys = GetPrimaryKeys(foreignType);
-                if (!(keys.Count() == 1 && keys.First() == keyName))
-                    keyProp = mirror.GetProperty(keyName, BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public);
+                if (!(keys.Count() == 1 && keys.First().Is(keyName)))
+                    keyProp = mirror.GetProperty(keyName, CaseInsensitiveBinding);
             } // end if
             return keyProp;
         } // end method

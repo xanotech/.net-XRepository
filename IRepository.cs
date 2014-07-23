@@ -4,7 +4,6 @@ namespace Xanotech.Repository {
     public interface IRepository {
         long Count<T>() where T : new();
         long Count<T>(IEnumerable<Criterion> criteria) where T : new();
-        long Count<T>(long? id) where T : new();
         long Count<T>(object criteria) where T : new();
         long Count<T>(params Criterion[] criteria) where T : new();
 

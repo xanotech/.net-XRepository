@@ -14,6 +14,9 @@ namespace Xanotech.Repository {
 
     public class DatabaseRepository : IRepository {
 
+        private const BindingFlags CaseInsensitiveBinding =
+            BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public;
+
         /// <summary>
         ///   A static collection of connectionId values with their associated ConnectionInfos.
         /// </summary>
@@ -238,7 +241,7 @@ namespace Xanotech.Repository {
                     var schema = DatabaseInfo.GetSchemaTable(tableName);
                     for (int i = 0; i < schema.Rows.Count; i++) {
                         var key = (string)schema.Rows[i][0];
-                        var prop = mirror.GetProperty(key);
+                        var prop = mirror.GetProperty(key, CaseInsensitiveBinding);
                         if (prop == null)
                             continue;
 
@@ -403,23 +406,25 @@ namespace Xanotech.Repository {
 
 
 
-        public long Count<T>(long? id) where T : new() {
-            try {
+        public long Count<T>(object criteria) where T : new() {
+            if (criteria == null || criteria.GetType().IsBasic()) try {
                 var type = typeof(T);
                 var idProperty = DatabaseInfo.GetIdProperty(type);
-                if (idProperty == null)
-                    throw new DataException("The Repository.Count<T>(long?) method cannot be used for " +
-                        type.FullName + " because does not have a single integer-based primary key or " +
-                        "a property that corresponds to the primary key.");
-                return Count<T>(new Criterion(idProperty.Name, "=", id));
+                if (idProperty == null) {
+                    var value = "" + criteria;
+                    if (type == typeof(string) || type == typeof(DateTime) || type == typeof(DateTime?))
+                        value = '"' + value + '"';
+                    else if (type == typeof(char) || type == typeof(char?))
+                        value = "'" + value + "'";
+                    throw new DataException("Repository.Count<T>(" + value + ") method cannot be used for " +
+                        type.FullName + " because does not have a single column primary key or " +
+                        "it doesn't have a property that corresponds to the primary key.");
+                } // end if
+                return Count<T>(new Criterion(idProperty.Name, "=", criteria));
             } finally {
                 CloseConnection();
             } // end try-finally
-        } // end method
 
-
-
-        public long Count<T>(object criteria) where T : new() {
             var enumerable = Criterion.Create(criteria);
             return Count<T>(enumerable);
         } // end method
@@ -545,7 +550,7 @@ namespace Xanotech.Repository {
                 var val = dr.GetValue(i);
                 var valType = val.GetType();
 
-                var prop = typeMirror.GetProperty(name);
+                var prop = typeMirror.GetProperty(name, CaseInsensitiveBinding);
 
                 if (prop == null)
                     continue;
@@ -628,10 +633,10 @@ namespace Xanotech.Repository {
             try {
                 var sql = new StringBuilder("UPDATE " + table + " SET" + Environment.NewLine);
 
-                var primaryKeyColumns = criteria.Select(c => c.Name);
+                var primaryKeyColumns = criteria.Select(c => c.Name.ToUpper());
                 bool isAfterFirst = false;
                 foreach (string column in values.Keys) {
-                    if (primaryKeyColumns.Contains(column))
+                    if (primaryKeyColumns.Contains(column.ToUpper()))
                         continue;
 
                     if (isAfterFirst)
@@ -717,20 +722,18 @@ namespace Xanotech.Repository {
 
 
         public Cursor<T> Find<T>(object criteria) where T : new() {
-            if (criteria == null)
-                return Find<T>((IEnumerable<Criterion>)null);
-            else if (criteria.GetType().IsBasic()) try {
+            if (criteria == null || criteria.GetType().IsBasic()) try {
                 var type = typeof(T);
                 var idProperty = DatabaseInfo.GetIdProperty(type);
                 if (idProperty == null) {
-                    var value = criteria.ToBasicString();
+                    var value = "" + criteria;
                     if (type == typeof(string) || type == typeof(DateTime) || type == typeof(DateTime?))
                         value = '"' + value + '"';
                     else if (type == typeof(char) || type == typeof(char?))
                         value = "'" + value + "'";
                     throw new DataException("Repository.Find<T>(" + value + ") method cannot be used for " +
-                        type.FullName + " because does not have a single integer-based primary key or " +
-                        "a property that corresponds to the primary key.");
+                        type.FullName + " because does not have a single column primary key or " +
+                        "it doesn't have a property that corresponds to the primary key.");
                 } // end if
                 return Find<T>(new Criterion(idProperty.Name, "=", criteria));
             } finally {
@@ -867,8 +870,7 @@ namespace Xanotech.Repository {
             var properties = new List<PropertyInfo>();
             var criteriaMap = new Dictionary<string, object>();
             foreach (var key in primaryKeys) {
-                var property = mirror.GetProperty(key,
-                    BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public);
+                var property = mirror.GetProperty(key, CaseInsensitiveBinding);
                 if (property == null)
                     throw new MissingPrimaryKeyException("The object passed does " +
                         "not specify all the primary keys for " + tableName +
@@ -903,7 +905,7 @@ namespace Xanotech.Repository {
             var mirror = DatabaseInfo.GetMirror(obj.GetType());
             for (int i = 0; i < schema.Rows.Count; i++) {
                 var key = (string)schema.Rows[i][0];
-                var prop = mirror.GetProperty(key);
+                var prop = mirror.GetProperty(key, CaseInsensitiveBinding);
                 if (prop != null)
                     values[key] = prop.GetValue(obj, null);
             } // end if

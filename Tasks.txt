@@ -1,9 +1,4 @@
 o Refactor DatabaseRepository code
-    - Look at uses of GetTableNames to see why the list is reversed.
-    - Improve Auto Mapping to look for property name based on name of foreign key instead of just "Id".
-      Also, have it look for both root table name + key name and just the key name.  Rule out any types with more than one Primary Key Column.
-    - Look at all string comparisons and possibly replace == with .Is
-      (Remember to consider string's .Remove and .Replace methods).
     - Improve Reference Initialization (options follow)...
         . Allow for "No Reference Initialization" when calling Find
         . Pull related objects in bulk based on primary keys instead of single pulls
