@@ -42,6 +42,8 @@ namespace Xanotech.Repository {
         /// </summary>
         private IDbConnection connection;
 
+
+
         /// <summary>
         ///   Holds the "id" of the current connection.  The id values are simply consecutive
         ///   integers stored in the static nextConnectionId which is incremented whenever
@@ -50,10 +52,10 @@ namespace Xanotech.Repository {
         private long connectionId;
 
         /// <summary>
-        ///   The idCache is used exclusively when retrieving objects from
-        ///   the database and only exists for the current thread.
+        ///   Used exclusively when retrieving objects from the database for the purpose of
+        ///   setting references values (SetReferences) and only exists for the current thread.
         /// </summary>
-        private Cache<Tuple<Type, object>, object> idCache;
+        private IDictionary<Type, IDictionary<object, object>> idObjectMap;
 
         /// <summary>
         ///   The Func used for creating / opening a new connection (provided during construction).
@@ -425,7 +427,11 @@ namespace Xanotech.Repository {
                 CloseConnection();
             } // end try-finally
 
-            var enumerable = Criterion.Create(criteria);
+            var criterion = criteria as Criterion;
+            if (criterion != null)
+                criteria = new[] { criterion };
+
+            var enumerable = criteria as IEnumerable<Criterion> ?? Criterion.Create(criteria);
             return Count<T>(enumerable);
         } // end method
 
@@ -664,6 +670,20 @@ namespace Xanotech.Repository {
 
 
 
+        private DatabaseInfo databaseInfo;
+        protected DatabaseInfo DatabaseInfo {
+            get {
+                if (databaseInfo == null)
+                    databaseInfo = new DatabaseInfo(Connection, s => Log(s));
+                return databaseInfo;
+            } // end get
+            private set {
+                databaseInfo = value;
+            } // end set
+        } // property
+
+
+
         private static void DefaultLog(string msg) {
             if (Debugger.IsAttached)
                 Debug.WriteLine("[" + typeof(DatabaseRepository).FullName + "] " + msg);
@@ -681,25 +701,30 @@ namespace Xanotech.Repository {
 
 
 
-        private IEnumerable<T> Fetch<T>(IEnumerable<Criterion> criteria, Cursor<T> cursor)
+        private IEnumerable<T> Fetch<T>(Cursor<T> cursor)
             where T : new() {
             try {
-                bool wasNull = idCache == null;
+                bool wasNull = idObjectMap == null;
                 if (wasNull)
-                    idCache = new Cache<Tuple<Type, object>, object>();
+                    idObjectMap = new Dictionary<Type, IDictionary<object, object>>();
+
+                var type = typeof(T);
+                if (!idObjectMap.ContainsKey(type))
+                    idObjectMap[type] = new Dictionary<object, object>();
 
                 IEnumerable<T> objs;
-                var tableNames = DatabaseInfo.GetTableNames(typeof(T));
+                var tableNames = DatabaseInfo.GetTableNames(type);
                 using (var cmd = CreateSelectCommand(tableNames, cursor, false))
                     objs = CreateObjects<T>(cmd, cursor);
                 foreach (var obj in objs) {
                     var id = GetId(obj);
-                    idCache.GetValue(new Tuple<Type, object>(obj.GetType(), id), () => obj);
+                    if (id != null)
+                        idObjectMap[type][id] = obj;
                 } // end foreach
                 SetReferences(objs);
 
                 if (wasNull)
-                    idCache = null;
+                    idObjectMap = null;
 
                 return objs;
             } finally {
@@ -740,7 +765,11 @@ namespace Xanotech.Repository {
                 CloseConnection();
             } // end try-finally
 
-            var enumerable = Criterion.Create(criteria);
+            var criterion = criteria as Criterion;
+            if (criterion != null)
+                criteria = new[] {criterion};
+
+            var enumerable = criteria as IEnumerable<Criterion> ?? Criterion.Create(criteria);
             return Find<T>(enumerable);
         } // end method
 
@@ -915,20 +944,6 @@ namespace Xanotech.Repository {
 
 
 
-        private DatabaseInfo databaseInfo;
-        protected DatabaseInfo DatabaseInfo {
-            get {
-                if (databaseInfo == null)
-                    databaseInfo = new DatabaseInfo(Connection, s => Log(s));
-                return databaseInfo;
-            } // end get
-            private set {
-                databaseInfo = value;
-            } // end set
-        } // property
-
-
-
         private Action<string> log;
         public Action<string> Log {
             get {
@@ -955,11 +970,11 @@ namespace Xanotech.Repository {
 
 
 
-        private object ReflectedFindOne(Type type, object id) {
+        private object ReflectedFind(Type type, object criteria) {
             var mirror = DatabaseInfo.GetMirror(GetType());
-            var method = mirror.GetMethod("FindOne", new[] { typeof(object) });
+            var method = mirror.GetMethod("Find", new[] {typeof(object)});
             method = method.MakeGenericMethod(type);
-            return method.Invoke(this, new object[] { id });
+            return method.Invoke(this, new[] {criteria});
         } // end method
 
 
@@ -1097,6 +1112,9 @@ namespace Xanotech.Repository {
 
         private void SetReferences<T>(IEnumerable<T> objs) {
             var references = DatabaseInfo.GetReferences(typeof(T));
+
+            var idsToFind = new Dictionary<Type, IList<object>>();
+
             foreach (var obj in objs)
             foreach (var reference in references) {
                 if (reference.IsMany) {
@@ -1112,11 +1130,41 @@ namespace Xanotech.Repository {
                     if (id == null)
                         continue;
 
-                    object referenceObj = idCache.GetValue(new Tuple<Type, object>(reference.ReferencedType, id),
-                        () => ReflectedFindOne(reference.ReferencedType, id));
-                    reference.ValueProperty.SetValue(obj, referenceObj, null);
+                    if (!idObjectMap.ContainsKey(reference.ReferencedType))
+                        idObjectMap[reference.ReferencedType] = new Dictionary<object, object>();
+
+                    if (!idObjectMap[reference.ReferencedType].ContainsKey(id)) {
+                        if (!idsToFind.ContainsKey(reference.ReferencedType))
+                            idsToFind[reference.ReferencedType] = new List<object>();
+                        if (!idsToFind[reference.ReferencedType].Contains(id))
+                            idsToFind[reference.ReferencedType].Add(id);
+                    } // end if
                 } // end if-else
             } // end foreach
+
+            foreach (var type in idsToFind.Keys) {
+                var idProperty = DatabaseInfo.GetIdProperty(type);
+                if (idProperty == null)
+                    continue;
+
+                var criterion = new Criterion(idProperty.Name, "=", idsToFind[type]);
+                var results = ReflectedFind(type, new[] {criterion});
+                // Retrieves results (which loads them into idObjectMap)
+                (results as IEnumerable).GetEnumerator();
+            } // end foreach
+
+            foreach (var obj in objs)
+            foreach (var reference in references)
+            if (reference.IsOne) {
+                var id = reference.KeyProperty.GetValue(obj, null);
+                if (id == null)
+                    continue;
+
+                if (idObjectMap[reference.ReferencedType].ContainsKey(id)) {
+                    object referencedObj = idObjectMap[reference.ReferencedType][id];
+                    reference.ValueProperty.SetValue(obj, referencedObj, null);
+                } // end if
+            } // end for-each
         } // end method
 
     } // end class

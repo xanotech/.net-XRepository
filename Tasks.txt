@@ -1,8 +1,8 @@
 o Refactor DatabaseRepository code
     - Improve Reference Initialization (options follow)...
         . Allow for "No Reference Initialization" when calling Find
-        . Pull related objects in bulk based on primary keys instead of single pulls
         . Create Join method in Cursor that pulls and relates related objects
+        . Put referencing object in cache when fetching for LazyLoadEnumerable
     - Change sequencer to use collections from System.Collections.Concurrent
     - Create 2 more Sequencers
         . TableSequencer (uses table with database locking for ids)

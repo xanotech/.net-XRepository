@@ -13,7 +13,7 @@ namespace Xanotech.Repository {
         // data and fetch are closely related.  data is essentially initialized
         // the the results of fetch whenever results need to be pulled.
         private IList<T> data;
-        private Func<IEnumerable<Criterion>, Cursor<T>, IEnumerable<T>> fetch;
+        private Func<Cursor<T>, IEnumerable<T>> fetch;
 
         private IRepository repository; // Only used for Count.
 
@@ -26,7 +26,7 @@ namespace Xanotech.Repository {
 
 
         internal Cursor(IEnumerable<Criterion> criteria,
-            Func<IEnumerable<Criterion>, Cursor<T>, IEnumerable<T>> fetchFunc,
+            Func<Cursor<T>, IEnumerable<T>> fetchFunc,
             IRepository repository) {
             if (fetchFunc == null)
                 throw new ArgumentNullException("fetchFunc", "The fetchFunc parameter is null.");
@@ -40,7 +40,7 @@ namespace Xanotech.Repository {
 
         public long Count(bool applySkipLimit = false) {
             if (applySkipLimit) {
-                data = data ?? new List<T>(fetch(criteria, this));
+                data = data ?? new List<T>(fetch(this));
                 return data.Count;
             } else
                 return repository.Count<T>(criteria);
@@ -49,7 +49,7 @@ namespace Xanotech.Repository {
 
 
         public IEnumerator<T> GetEnumerator() {
-            data = data ?? new List<T>(fetch(criteria, this));
+            data = data ?? new List<T>(fetch(this));
             return data.GetEnumerator();
         } // end method
 
