@@ -13,9 +13,11 @@ namespace Xanotech.Repository {
         // data and fetch are closely related.  data is essentially initialized
         // the the results of fetch whenever results need to be pulled.
         private IList<T> data;
-        private Func<Cursor<T>, IEnumerable<T>> fetch;
+        private Func<Cursor<T>, IEnumerable[], IEnumerable<T>> fetch;
 
         private IRepository repository; // Only used for Count.
+
+        private IEnumerable[] joinObjects; // Passed to fetch, received from Join method.
 
         // The following values hold the underlying values for
         // the limit, skip, and sort methods / properties.
@@ -26,7 +28,7 @@ namespace Xanotech.Repository {
 
 
         internal Cursor(IEnumerable<Criterion> criteria,
-            Func<Cursor<T>, IEnumerable<T>> fetchFunc,
+            Func<Cursor<T>, IEnumerable[], IEnumerable<T>> fetchFunc,
             IRepository repository) {
             if (fetchFunc == null)
                 throw new ArgumentNullException("fetchFunc", "The fetchFunc parameter is null.");
@@ -40,7 +42,7 @@ namespace Xanotech.Repository {
 
         public long Count(bool applySkipLimit = false) {
             if (applySkipLimit) {
-                data = data ?? new List<T>(fetch(this));
+                data = data ?? new List<T>(fetch(this, joinObjects));
                 return data.Count;
             } else
                 return repository.Count<T>(criteria);
@@ -49,7 +51,7 @@ namespace Xanotech.Repository {
 
 
         public IEnumerator<T> GetEnumerator() {
-            data = data ?? new List<T>(fetch(this));
+            data = data ?? new List<T>(fetch(this, joinObjects));
             return data.GetEnumerator();
         } // end method
 
@@ -57,6 +59,14 @@ namespace Xanotech.Repository {
 
         IEnumerator IEnumerable.GetEnumerator() {
             return GetEnumerator();
+        } // end method
+
+
+
+        public Cursor<T> Join(params IEnumerable[] objects) {
+            data = null;
+            joinObjects = objects;
+            return this;
         } // end method
 
         

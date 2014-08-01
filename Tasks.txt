@@ -1,8 +1,5 @@
 o Refactor DatabaseRepository code
-    - Improve Reference Initialization (options follow)...
-        . Allow for "No Reference Initialization" when calling Find
-        . Create Join method in Cursor that pulls and relates related objects
-        . Put referencing object in cache when fetching for LazyLoadEnumerable
+    - Allow for "No Reference Initialization" when calling Find
     - Change sequencer to use collections from System.Collections.Concurrent
     - Create 2 more Sequencers
         . TableSequencer (uses table with database locking for ids)
@@ -13,10 +10,9 @@ o Refactor DatabaseRepository code
     - Implement Producer / Consumer for Reads
 o Test DatabaseRepository
     - Test Improved Auto Mapping
-    - Test Improved Reference Initialization
+    - Test Improved Reference Initialization (use large random set of test data)
     - Test Mapping
     - Test new Sequencers
-    - Test Giant OR clause (huge criteria[] array)
 o Setup Databases...
     - SQL Server
     - SQL Server Compact

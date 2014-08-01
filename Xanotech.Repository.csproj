@@ -60,7 +60,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />
-    <Compile Include="Cursor1.cs" />
+    <Compile Include="Cursor.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Tasks.txt" />

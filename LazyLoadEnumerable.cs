@@ -11,6 +11,7 @@ namespace Xanotech.Repository {
         private static IDictionary<Type, Type> genericTypeCache = new Dictionary<Type, Type>();
 
         public Criterion Criterion { get; set; }
+        public object ReferencingObject { get; set; }
         public IRepository Repository { get; set; }
 
 
@@ -21,8 +22,11 @@ namespace Xanotech.Repository {
 
             if (Criterion == null || Repository == null)
                 data = new List<T>();
-            else
-                data = new List<T>(Repository.Find<T>(Criterion));
+            else {
+                var cursor = Repository.Find<T>(Criterion);
+                cursor.Join(new[] {ReferencingObject});
+                data = new List<T>(cursor);
+            } // end else
             return data.GetEnumerator();
         } // end method
 

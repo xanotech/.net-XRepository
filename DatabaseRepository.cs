@@ -57,6 +57,8 @@ namespace Xanotech.Repository {
         /// </summary>
         private IDictionary<Type, IDictionary<object, object>> idObjectMap;
 
+        private IDictionary<Type, IDictionary<object, object>> joinObjectMap;
+
         /// <summary>
         ///   The Func used for creating / opening a new connection (provided during construction).
         /// </summary>
@@ -302,6 +304,15 @@ namespace Xanotech.Repository {
 
 
 
+        private object CastToTypedEnumerable(IEnumerable enumerable, Type type) {
+            var enumerableMirror = DatabaseInfo.GetMirror(typeof(Enumerable));
+            var castMethod = enumerableMirror.GetMethod("Cast", new[] {typeof(IEnumerable)});
+            castMethod = castMethod.MakeGenericMethod(new[] {type});
+            return castMethod.Invoke(null, new object[] {enumerable});
+        } // end method
+
+
+
         private static void CheckForConnectionLeaks(int seconds) {
             if (!Debugger.IsAttached)
                 return;
@@ -526,7 +537,7 @@ namespace Xanotech.Repository {
 
 
 
-        private object CreateLazyLoadEnumerable(Type type, Criterion criterion) {
+        private object CreateLazyLoadEnumerable(Type type, Criterion criterion, object referencingObject) {
             var lazyLoadType = typeof(LazyLoadEnumerable<>);
             var mirror = DatabaseInfo.GetMirror(lazyLoadType);
             var lazyLoadGenericType = mirror.MakeGenericType(type);
@@ -535,6 +546,9 @@ namespace Xanotech.Repository {
             mirror = DatabaseInfo.GetMirror(lazyLoadGenericType);
             var property = mirror.GetProperty("Criterion");
             property.SetValue(instance, criterion, null);
+
+            property = mirror.GetProperty("ReferencingObject");
+            property.SetValue(instance, referencingObject, null);
 
             property = mirror.GetProperty("Repository");
             property.SetValue(instance, this, null);
@@ -701,30 +715,30 @@ namespace Xanotech.Repository {
 
 
 
-        private IEnumerable<T> Fetch<T>(Cursor<T> cursor)
+        private IEnumerable<T> Fetch<T>(Cursor<T> cursor, IEnumerable[] joinObjects)
             where T : new() {
             try {
                 bool wasNull = idObjectMap == null;
                 if (wasNull)
                     idObjectMap = new Dictionary<Type, IDictionary<object, object>>();
 
-                var type = typeof(T);
-                if (!idObjectMap.ContainsKey(type))
-                    idObjectMap[type] = new Dictionary<object, object>();
-
                 IEnumerable<T> objs;
-                var tableNames = DatabaseInfo.GetTableNames(type);
+                var tableNames = DatabaseInfo.GetTableNames(typeof(T));
                 using (var cmd = CreateSelectCommand(tableNames, cursor, false))
                     objs = CreateObjects<T>(cmd, cursor);
                 foreach (var obj in objs) {
                     var id = GetId(obj);
                     if (id != null)
-                        idObjectMap[type][id] = obj;
+                        MapObject(id, obj, idObjectMap);
                 } // end foreach
-                SetReferences(objs);
 
-                if (wasNull)
+                if (joinObjectMap == null)
+                    InitObjectMaps(joinObjects);
+                SetReferences(objs);
+                if (wasNull) {
                     idObjectMap = null;
+                    joinObjectMap = null;
+                } // end if
 
                 return objs;
             } finally {
@@ -801,6 +815,40 @@ namespace Xanotech.Repository {
 
         public T FindOne<T>(params Criterion[] criteria) where T : new() {
             return Find<T>(criteria).Limit(1).FirstOrDefault();
+        } // end method
+
+
+
+        private void FindReferenceIds(IEnumerable objs, IEnumerable<Reference> references) {
+            var idsToFind = new Dictionary<Type, IList<object>>();
+            foreach (var obj in objs)
+            foreach (var reference in references)
+            if (reference.IsOne) {
+                var id = reference.KeyProperty.GetValue(obj, null);
+                if (id == null)
+                    continue;
+
+                if (!idObjectMap.ContainsKey(reference.ReferencedType))
+                    idObjectMap[reference.ReferencedType] = new Dictionary<object, object>();
+
+                if (!idObjectMap[reference.ReferencedType].ContainsKey(id)) {
+                    if (!idsToFind.ContainsKey(reference.ReferencedType))
+                        idsToFind[reference.ReferencedType] = new List<object>();
+                    if (!idsToFind[reference.ReferencedType].Contains(id))
+                        idsToFind[reference.ReferencedType].Add(id);
+                } // end if
+            } // end if
+
+            foreach (var type in idsToFind.Keys) {
+                var idProperty = DatabaseInfo.GetIdProperty(type);
+                if (idProperty == null)
+                    continue;
+
+                var criterion = new Criterion(idProperty.Name, "=", idsToFind[type]);
+                var results = ReflectedFind(type, new[] {criterion});
+                // Retrieves results (which loads them into idObjectMap)
+                (results as IEnumerable).GetEnumerator();
+            } // end foreach
         } // end method
 
         
@@ -944,6 +992,25 @@ namespace Xanotech.Repository {
 
 
 
+        private void InitObjectMaps(IEnumerable[] joinObjects) {
+            if (joinObjectMap != null)
+                return;
+
+            joinObjectMap = new Dictionary<Type, IDictionary<object, object>>();
+
+            if (joinObjects == null)
+                return;
+
+            foreach (var joinObjEnum in joinObjects)
+            foreach (var obj in joinObjEnum) {
+                var id = GetId(obj);
+                if (id != null)
+                    MapObject(id, obj, idObjectMap, joinObjectMap);
+            } // end foreach
+        } // end method
+
+
+
         private Action<string> log;
         public Action<string> Log {
             get {
@@ -960,6 +1027,22 @@ namespace Xanotech.Repository {
             var msg = FormatLogMessage(cmd);
             Log(msg);
             ConnectionInfo.SqlLog.Add(msg);
+        } // end method
+
+
+
+        private void MapObject(object id, object obj,
+            params IDictionary<Type, IDictionary<object, object>>[] maps) {
+            var type = obj.GetType();
+            while (type != typeof(object)) {
+                if (DatabaseInfo.GetTableDefinition(type.Name) != null)
+                    foreach (var map in maps) {
+                        if (!map.ContainsKey(type))
+                            map[type] = new Dictionary<object, object>();
+                        map[type][id] = obj;
+                    } // end foreach
+                type = type.BaseType;
+            } // end while
         } // end method
 
 
@@ -1110,49 +1193,44 @@ namespace Xanotech.Repository {
 
 
 
-        private void SetReferences<T>(IEnumerable<T> objs) {
-            var references = DatabaseInfo.GetReferences(typeof(T));
-
-            var idsToFind = new Dictionary<Type, IList<object>>();
+        private void SetManyReferences(IEnumerable objs, IEnumerable<Reference> references) {
+            // This funky collection holds enumerables (ILists) keyed by Type and KeyProperty value == id
+            var joinEnumerables = new Dictionary<Type, IDictionary<object, IList<object>>>();
 
             foreach (var obj in objs)
-            foreach (var reference in references) {
-                if (reference.IsMany) {
-                    var id = GetId(obj);
-                    if (id == null)
-                        continue;
-
-                    Criterion criterion = new Criterion(reference.KeyProperty.Name, "=", id);
-                    var lazyLoadEnum = CreateLazyLoadEnumerable(reference.ReferencedType, criterion);
-                    reference.ValueProperty.SetValue(obj, lazyLoadEnum, null);
-                } else {
-                    var id = reference.KeyProperty.GetValue(obj, null);
-                    if (id == null)
-                        continue;
-
-                    if (!idObjectMap.ContainsKey(reference.ReferencedType))
-                        idObjectMap[reference.ReferencedType] = new Dictionary<object, object>();
-
-                    if (!idObjectMap[reference.ReferencedType].ContainsKey(id)) {
-                        if (!idsToFind.ContainsKey(reference.ReferencedType))
-                            idsToFind[reference.ReferencedType] = new List<object>();
-                        if (!idsToFind[reference.ReferencedType].Contains(id))
-                            idsToFind[reference.ReferencedType].Add(id);
-                    } // end if
-                } // end if-else
-            } // end foreach
-
-            foreach (var type in idsToFind.Keys) {
-                var idProperty = DatabaseInfo.GetIdProperty(type);
-                if (idProperty == null)
+            foreach (var reference in references)
+            if (reference.IsMany) {
+                var id = GetId(obj);
+                if (id == null)
                     continue;
 
-                var criterion = new Criterion(idProperty.Name, "=", idsToFind[type]);
-                var results = ReflectedFind(type, new[] {criterion});
-                // Retrieves results (which loads them into idObjectMap)
-                (results as IEnumerable).GetEnumerator();
-            } // end foreach
+                object enumerable;
+                if (joinObjectMap.ContainsKey(reference.ReferencedType)) {
+                    if (!joinEnumerables.ContainsKey(reference.ReferencedType))
+                        foreach (var joinObj in joinObjectMap[reference.ReferencedType].Values) {
+                            var keyValue = reference.KeyProperty.GetValue(joinObj, null);
+                            if (!joinEnumerables.ContainsKey(reference.ReferencedType))
+                                joinEnumerables[reference.ReferencedType] = new Dictionary<object, IList<object>>();
+                            if (!joinEnumerables[reference.ReferencedType].ContainsKey(keyValue))
+                                joinEnumerables[reference.ReferencedType][keyValue] = new List<object>();
+                            joinEnumerables[reference.ReferencedType][keyValue].Add(joinObj);
+                        } // end foreach
 
+                    if (!joinEnumerables[reference.ReferencedType].ContainsKey(id))
+                        joinEnumerables[reference.ReferencedType][id] = new List<object>();
+
+                    enumerable = CastToTypedEnumerable(joinEnumerables[reference.ReferencedType][id], reference.ReferencedType);
+                } else {
+                    Criterion criterion = new Criterion(reference.KeyProperty.Name, "=", id);
+                    enumerable = CreateLazyLoadEnumerable(reference.ReferencedType, criterion, obj);
+                } // end if-else
+                reference.ValueProperty.SetValue(obj, enumerable, null);
+            } // end if
+        } // end method
+
+
+
+        private void SetOneReferences(IEnumerable objs, IEnumerable<Reference> references) {
             foreach (var obj in objs)
             foreach (var reference in references)
             if (reference.IsOne) {
@@ -1165,6 +1243,16 @@ namespace Xanotech.Repository {
                     reference.ValueProperty.SetValue(obj, referencedObj, null);
                 } // end if
             } // end for-each
+        } // end method
+
+
+
+        private void SetReferences(IEnumerable objs) {
+            var type = objs.GetType().GetGenericArguments()[0];
+            var references = DatabaseInfo.GetReferences(type);
+            SetManyReferences(objs, references);
+            FindReferenceIds(objs, references);
+            SetOneReferences(objs, references);
         } // end method
 
     } // end class
