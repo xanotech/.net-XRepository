@@ -69,6 +69,7 @@ namespace Xanotech.Repository {
         public DatabaseRepository(Func<IDbConnection> openConnectionFunc) {
             this.openConnectionFunc = openConnectionFunc;
             CreationStack = new StackTrace(true).ToString();
+            IsReferenceAssignmentActive = true;
         } // end constructor
 
 
@@ -820,6 +821,9 @@ namespace Xanotech.Repository {
 
 
         private void FindReferenceIds(IEnumerable objs, IEnumerable<Reference> references) {
+            if (!IsReferenceAssignmentActive)
+                return;
+
             var idsToFind = new Dictionary<Type, IList<object>>();
             foreach (var obj in objs)
             foreach (var reference in references)
@@ -1008,6 +1012,10 @@ namespace Xanotech.Repository {
                     MapObject(id, obj, idObjectMap, joinObjectMap);
             } // end foreach
         } // end method
+
+
+
+        public bool IsReferenceAssignmentActive { get; set; }
 
 
 
@@ -1204,7 +1212,6 @@ namespace Xanotech.Repository {
                 if (id == null)
                     continue;
 
-                object enumerable;
                 if (joinObjectMap.ContainsKey(reference.ReferencedType)) {
                     if (!joinEnumerables.ContainsKey(reference.ReferencedType))
                         foreach (var joinObj in joinObjectMap[reference.ReferencedType].Values) {
@@ -1219,12 +1226,13 @@ namespace Xanotech.Repository {
                     if (!joinEnumerables[reference.ReferencedType].ContainsKey(id))
                         joinEnumerables[reference.ReferencedType][id] = new List<object>();
 
-                    enumerable = CastToTypedEnumerable(joinEnumerables[reference.ReferencedType][id], reference.ReferencedType);
-                } else {
+                    var enumerable = CastToTypedEnumerable(joinEnumerables[reference.ReferencedType][id], reference.ReferencedType);
+                    reference.ValueProperty.SetValue(obj, enumerable, null);
+                } else if (IsReferenceAssignmentActive) {
                     Criterion criterion = new Criterion(reference.KeyProperty.Name, "=", id);
-                    enumerable = CreateLazyLoadEnumerable(reference.ReferencedType, criterion, obj);
+                    var enumerable = CreateLazyLoadEnumerable(reference.ReferencedType, criterion, obj);
+                    reference.ValueProperty.SetValue(obj, enumerable, null);
                 } // end if-else
-                reference.ValueProperty.SetValue(obj, enumerable, null);
             } // end if
         } // end method
 

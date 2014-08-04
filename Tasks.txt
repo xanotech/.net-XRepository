@@ -1,5 +1,4 @@
 o Refactor DatabaseRepository code
-    - Allow for "No Reference Initialization" when calling Find
     - Change sequencer to use collections from System.Collections.Concurrent
     - Create 2 more Sequencers
         . TableSequencer (uses table with database locking for ids)

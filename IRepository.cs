@@ -17,6 +17,8 @@ namespace Xanotech.Repository {
         T FindOne<T>(object criteria) where T : new();
         T FindOne<T>(params Criterion[] criteria) where T : new();
 
+        bool IsReferenceAssignmentActive { get; set; }
+
         void Remove(object obj);
 
         void Save(object obj);
