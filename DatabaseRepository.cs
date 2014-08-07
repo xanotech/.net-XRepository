@@ -245,8 +245,8 @@ namespace Xanotech.Repository {
                 foreach (var tableName in tableNames) {
                     var schema = DatabaseInfo.GetSchemaTable(tableName);
                     for (int i = 0; i < schema.Rows.Count; i++) {
-                        var key = (string)schema.Rows[i][0];
-                        var prop = mirror.GetProperty(key, CaseInsensitiveBinding);
+                        var column = (string)schema.Rows[i][0];
+                        var prop = mirror.GetProperty(column, CaseInsensitiveBinding);
                         if (prop == null)
                             continue;
 
@@ -259,7 +259,7 @@ namespace Xanotech.Repository {
                                 sql.Append(' ');
                         } // end if
                         valuesOnLineCount++;
-                        sql.Append(tableName + '.' + key);
+                        sql.Append(tableName + '.' + column);
                         isAfterFirst = true;
                     } // end if
                 } // end foreach
@@ -296,9 +296,7 @@ namespace Xanotech.Repository {
             PropertyInfo idProperty;
             var id = GetIntId(obj, out idProperty);
             if (id == null && idProperty != null) {
-                if (DatabaseInfo.Sequencer == null)
-                    DatabaseInfo.Sequencer = new Sequencer(openConnectionFunc);
-                id = DatabaseInfo.Sequencer.GetNextValue(tableName, idProperty.Name);
+                id = Sequencer.GetNextValue(tableName, idProperty.Name);
                 idProperty.SetValue(obj, id, null);
             } // end if
         } // end method
@@ -1198,6 +1196,23 @@ namespace Xanotech.Repository {
                 CloseConnection();
             } // end try-finally
         } // end method
+
+
+
+        private Sequencer sequencer;
+        public Sequencer Sequencer {
+            get {
+                if (sequencer == null) {
+                    if (DatabaseInfo.Sequencer == null)
+                        DatabaseInfo.Sequencer = new Sequencer(openConnectionFunc);
+                    sequencer = DatabaseInfo.Sequencer;
+                } // end if
+                return sequencer;
+            } // end get
+            set {
+                sequencer = value;
+            } // end set
+        } // end property
 
 
 

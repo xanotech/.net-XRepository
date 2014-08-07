@@ -1,17 +1,5 @@
-o Refactor DatabaseRepository code
-    - Change sequencer to use collections from System.Collections.Concurrent
-    - Create 2 more Sequencers
-        . TableSequencer (uses table with database locking for ids)
-        . WebSequencer (uses external web site which will be backed by TableSequencer)
-    - Allow for an external Sequencer to be set
-    - Mapping
-    - Multiple Criteria arrays: Find(IEnumerable<IEnumerable<Criteria>>) (OR functionality)
-    - Implement Producer / Consumer for Reads
 o Test DatabaseRepository
-    - Test Improved Auto Mapping
     - Test Improved Reference Initialization (use large random set of test data)
-    - Test Mapping
-    - Test new Sequencers
 o Setup Databases...
     - SQL Server
     - SQL Server Compact
@@ -38,16 +26,19 @@ o Restructure DatabaseRepositoryTest to work on multiple databases
     - Test Sybase
     - Test DB2
     - Test Teradata
-o Rename / rebrand Xanotech.Repository as nRepository
-o Rename / rebrand Xanotech.Tools as xTools
-o Move RepositoryController from Xanotech.Web to nRepository
-o Merge Xanotech.Web into xTools
-o Create RepositoryController and jsRepository.js
-    - Split out query logic common to both nRepository and jsController
-o Implement Transaction capability to nRepository
+o Rename / rebrand Xanotech.Repository as NRepository
+o Rename / rebrand Xanotech.Tools as XTools
+o Move RepositoryController from Xanotech.Web to NRepository
+o Merge Xanotech.Web into XTools
+o Create RepositoryController and JSRepository.js
+    - Split out query logic common to both NRepository and RepositoryController
+o Implement Producer / Consumer for Reads
+o Implement Mapping functionality for NRepository and JSRepository
+o Implement Transaction capability to NRepository and JSRepository
 o Change BackgroundTaskQueue to use BlockingCollection
 o Create a generic UserController based on wheresmylinks user code
 o Create an ajax / javascript error handler (that integrates with other tools)
+o Create NWebRepository
 
 
 xRepository API...
