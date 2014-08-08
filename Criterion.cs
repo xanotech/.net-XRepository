@@ -130,7 +130,7 @@ namespace Xanotech.Repository {
 
 
 
-        private string FormatValueList(IEnumerable enumerable, bool useParameters, IDbCommand cmd) {
+        private string FormatValueList(IEnumerable enumerable, bool useParameters, IDbCommand cmd, DataRow schemaRow) {
             var isAfterFirst = false;
             var valueCount = 0;
             var valuesOnLineCount = 0;
@@ -149,7 +149,7 @@ namespace Xanotech.Repository {
                     var parameterName = Name + valueCount;
                     sql.Append('@' + parameterName);
                     if (cmd != null)
-                        cmd.AddParameter(parameterName, value);
+                        cmd.AddParameter(parameterName, value, schemaRow);
                 } else
                     sql.Append(value.ToSqlString());
 
@@ -164,12 +164,12 @@ namespace Xanotech.Repository {
 
 
         public override string ToString() {
-            return ToString(null, false);
+            return ToString(false, null, null);
         } // end method
 
 
 
-        internal string ToString(IDbCommand cmd, bool useParameters) {
+        internal string ToString(bool useParameters, IDbCommand cmd, DataRow schemaRow) {
             var opStr = ConvertOperationToString(Operation);
             if (opStr == "!=")
                 opStr = "<>";
@@ -182,7 +182,7 @@ namespace Xanotech.Repository {
                     case OperationType.EqualTo:
                     case OperationType.NotEqualTo:
                         opStr = Operation == OperationType.EqualTo ? "IN" : "NOT IN";
-                        valStr = FormatValueList(valList, useParameters, cmd);
+                        valStr = FormatValueList(valList, useParameters, cmd, schemaRow);
                         break;
                     case OperationType.GreaterThan:
                     case OperationType.GreaterThanOrEqualTo:
@@ -207,7 +207,7 @@ namespace Xanotech.Repository {
                 if (useParameters) {
                     valStr = '@' + Name;
                     if (cmd != null)
-                        cmd.AddParameter(Name, val);
+                        cmd.AddParameter(Name, val, schemaRow);
                 } else
                     valStr = val.ToSqlString();
             } // end if

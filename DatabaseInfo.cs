@@ -101,7 +101,7 @@ namespace Xanotech.Repository {
                 return pagingMechanism.Value;
 
             // Try OffsetFetchFirst
-            var firstColumn = GetSchemaTable(tableName).Rows[0][0];
+            var firstColumn = GetSchemaTable(tableName).Rows[0]["ColumnName"];
             sql = "SELECT " + firstColumn + " FROM " + tableName + " ORDER BY " +
                 firstColumn + " OFFSET 0 ROWS FETCH FIRST 1 ROWS ONLY";
             pagingMechanism = TryPagingMechanism(sql, PagingMechanism.OffsetFetchFirst);

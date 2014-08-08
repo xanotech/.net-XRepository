@@ -197,7 +197,7 @@ namespace Xanotech.Repository {
             var isColumnNameExists = false;
             var isSequenceValueExists = false;
             for (int i = 0; i < schema.Rows.Count; i++) {
-                var column = (string)schema.Rows[i][0];
+                var column = (string)schema.Rows[i]["ColumnName"];
                 if (column.Is("TableName"))
                     isTableNameExists = true;
                 if (column.Is("ColumnName"))

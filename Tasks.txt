@@ -1,26 +1,19 @@
-o Test DatabaseRepository
-    - Test Improved Reference Initialization (use large random set of test data)
+o Make sure criteria without matching columns return no results
 o Setup Databases...
-    - SQL Server
     - SQL Server Compact
-    - SQL Server Express
     - SQLite
     - MS Access
     - PostgreSQL
-    - MySQL
     - Oracle (express)
     - Informix
     - Sybase
     - DB2
     - Teradata
 o Restructure DatabaseRepositoryTest to work on multiple databases
-    - Test SQL Server
     - Test SQL Server Compact
-    - Test SQL Server Express
     - Test SQLite
     - Test MS Access
     - Test PostgreSQL
-    - Test MySQL
     - Test Oracle (express)
     - Test Informix
     - Test Sybase
@@ -32,7 +25,11 @@ o Move RepositoryController from Xanotech.Web to NRepository
 o Merge Xanotech.Web into XTools
 o Create RepositoryController and JSRepository.js
     - Split out query logic common to both NRepository and RepositoryController
+o Implement Security for NRepository and JSRepository
+o Figure out how to make Categorized Lookup Tables work with References
 o Implement Producer / Consumer for Reads
+o Test DatabaseRepository
+    - Test Improved Reference Initialization (use large random set of test data)
 o Implement Mapping functionality for NRepository and JSRepository
 o Implement Transaction capability to NRepository and JSRepository
 o Change BackgroundTaskQueue to use BlockingCollection

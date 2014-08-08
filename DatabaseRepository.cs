@@ -219,10 +219,10 @@ namespace Xanotech.Repository {
             if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.OffsetFetchFirst) {
                 var parts = new List<string>(3);
                 if (cursor.sort == null || cursor.sort.Count == 0) {
-                    var firstColumn = DatabaseInfo.GetSchemaTable(tableName).Rows[0][0];
-                    parts.Add("ORDER BY " + firstColumn);
+                    var firstColumn = DatabaseInfo.GetSchemaTable(tableName).Rows[0]["ColumnName"];
+                    parts.Add("ORDER BY " + tableName + "." + firstColumn);
                 } // end if
-                parts.Add("OFFSET " + cursor.skip ?? 0 + " ROWS");
+                parts.Add("OFFSET " + (cursor.skip ?? 0) + " ROWS");
                 if (cursor.limit != null)
                     parts.Add("FETCH FIRST " + cursor.limit + " ROWS ONLY");
                 pagingClause = string.Join(" ", parts);
@@ -245,7 +245,7 @@ namespace Xanotech.Repository {
                 foreach (var tableName in tableNames) {
                     var schema = DatabaseInfo.GetSchemaTable(tableName);
                     for (int i = 0; i < schema.Rows.Count; i++) {
-                        var column = (string)schema.Rows[i][0];
+                        var column = (string)schema.Rows[i]["ColumnName"];
                         var prop = mirror.GetProperty(column, CaseInsensitiveBinding);
                         if (prop == null)
                             continue;
@@ -278,13 +278,14 @@ namespace Xanotech.Repository {
             var sql = new StringBuilder();
             var whereAdded = false;
             foreach (var criterion in criteria) {
+                var schemaRow = GetScehmaTableRow(tableNames, criterion.Name);
                 var table = GetTableForColumn(tableNames, criterion.Name);
-                if (table == null)
+                if (schemaRow == null || table == null)
                     continue;
 
                 sql.Append(Environment.NewLine);
                 sql.Append(whereAdded ? "AND " : "WHERE ");
-                sql.Append(table + '.' + criterion.ToString(cmd, true));
+                sql.Append(table + '.' + criterion.ToString(true, cmd, schemaRow));
                 whereAdded = true;
             } // end foreach
             cmd.CommandText += sql;
@@ -492,11 +493,8 @@ namespace Xanotech.Repository {
                 AddWhereClause(cmd, new[] {table}, criteria);
                 LogCommand(cmd);
                 return cmd;
-            } catch {
-                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
-                // and then let the exception bubble up the stack.
+            } finally {
                 cmd.Dispose();
-                throw;
             } // end try-catch
         } // end method
 
@@ -515,7 +513,8 @@ namespace Xanotech.Repository {
                     } // end if
                     sql.Append(column);
                     valueString.Append('@' + column);
-                    cmd.AddParameter(column, values[column]);
+                    cmd.AddParameter(column, values[column],
+                        GetScehmaTableRow(new[] {table}, column));
                     isAfterFirst = true;
                 } // end for
 
@@ -526,11 +525,8 @@ namespace Xanotech.Repository {
                 cmd.CommandText = sql.ToString();
                 LogCommand(cmd);
                 return cmd;
-            } catch {
-                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
-                // and then let the exception bubble up the stack.
+            } finally {
                 cmd.Dispose();
-                throw;
             } // end try-catch
         } // end method
 
@@ -563,7 +559,7 @@ namespace Xanotech.Repository {
             var typeMirror = DatabaseInfo.GetMirror(type);
             var schema = dr.GetSchemaTable();
             for (var i = 0; i < dr.FieldCount; i++) {
-                var name = (string)schema.Rows[i][0];
+                var name = (string)schema.Rows[i]["ColumnName"];
                 name = FormatColumnName(name);
 
                 var val = dr.GetValue(i);
@@ -635,11 +631,8 @@ namespace Xanotech.Repository {
                 AddPagingClause(cmd, tableNames.FirstOrDefault(), cursor);
                 LogCommand(cmd);
                 return cmd;
-            } catch {
-                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
-                // and then let the exception bubble up the stack.
+            } finally {
                 cmd.Dispose();
-                throw;
             } // end try-catch
         } // end method
 
@@ -661,7 +654,8 @@ namespace Xanotech.Repository {
                     if (isAfterFirst)
                         sql.Append("," + Environment.NewLine);
                     sql.Append(column + " = @" + column);
-                    cmd.AddParameter(column, values[column]);
+                    cmd.AddParameter(column, values[column],
+                        GetScehmaTableRow(new[] { table }, column));
                     isAfterFirst = true;
                 } // end foreach
                 cmd.CommandText = sql.ToString();
@@ -669,11 +663,8 @@ namespace Xanotech.Repository {
 
                 LogCommand(cmd);
                 return cmd;
-            } catch {
-                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
-                // and then let the exception bubble up the stack.
+            } finally {
                 cmd.Dispose();
-                throw;
             } // end try-catch
         } // end method
 
@@ -930,7 +921,7 @@ namespace Xanotech.Repository {
                     parameter.Value = values[parameter.ParameterName] ?? DBNull.Value;
 
                 // Only explicity log here (when the command exists after parameters
-                // are set) because CreateDeleteCommand already logs the command.
+                // are set) because createCmdFunc already logs the command.
                 LogCommand(cmd);
             } else {
                 cmd = createCmdFunc();
@@ -961,6 +952,18 @@ namespace Xanotech.Repository {
 
 
 
+        private DataRow GetScehmaTableRow(IEnumerable<string> tableNames, string column) {
+            foreach (string tableName in tableNames) {
+                var schema = DatabaseInfo.GetSchemaTable(tableName);
+                for (int r = 0; r < schema.Rows.Count; r++)
+                    if (column == (string)schema.Rows[r]["ColumnName"])
+                        return schema.Rows[r];
+            } // end for
+            return null;
+        } // end method
+
+
+
         private string GetTableForColumn(IEnumerable<string> tableNames, string column) {
             foreach (string tableName in tableNames) {
                 var schema = DatabaseInfo.GetSchemaTable(tableName);
@@ -983,7 +986,7 @@ namespace Xanotech.Repository {
 
             var mirror = DatabaseInfo.GetMirror(obj.GetType());
             for (int i = 0; i < schema.Rows.Count; i++) {
-                var key = (string)schema.Rows[i][0];
+                var key = (string)schema.Rows[i]["ColumnName"];
                 var prop = mirror.GetProperty(key, CaseInsensitiveBinding);
                 if (prop != null)
                     values[key] = prop.GetValue(obj, null);
