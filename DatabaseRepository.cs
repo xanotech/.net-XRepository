@@ -493,8 +493,11 @@ namespace Xanotech.Repository {
                 AddWhereClause(cmd, new[] {table}, criteria);
                 LogCommand(cmd);
                 return cmd;
-            } finally {
+            } catch {
+                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
+                // and then let the exception bubble up the stack.
                 cmd.Dispose();
+                throw;
             } // end try-catch
         } // end method
 
@@ -525,8 +528,11 @@ namespace Xanotech.Repository {
                 cmd.CommandText = sql.ToString();
                 LogCommand(cmd);
                 return cmd;
-            } finally {
+            } catch {
+                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
+                // and then let the exception bubble up the stack.
                 cmd.Dispose();
+                throw;
             } // end try-catch
         } // end method
 
@@ -631,8 +637,11 @@ namespace Xanotech.Repository {
                 AddPagingClause(cmd, tableNames.FirstOrDefault(), cursor);
                 LogCommand(cmd);
                 return cmd;
-            } finally {
+            } catch {
+                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
+                // and then let the exception bubble up the stack.
                 cmd.Dispose();
+                throw;
             } // end try-catch
         } // end method
 
@@ -663,8 +672,11 @@ namespace Xanotech.Repository {
 
                 LogCommand(cmd);
                 return cmd;
-            } finally {
+            } catch {
+                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
+                // and then let the exception bubble up the stack.
                 cmd.Dispose();
+                throw;
             } // end try-catch
         } // end method
 

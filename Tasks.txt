@@ -1,6 +1,5 @@
 o Make sure criteria without matching columns return no results
 o Setup Databases...
-    - SQL Server Compact
     - SQLite
     - MS Access
     - PostgreSQL
@@ -10,7 +9,6 @@ o Setup Databases...
     - DB2
     - Teradata
 o Restructure DatabaseRepositoryTest to work on multiple databases
-    - Test SQL Server Compact
     - Test SQLite
     - Test MS Access
     - Test PostgreSQL
