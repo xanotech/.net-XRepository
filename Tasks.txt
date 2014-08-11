@@ -1,6 +1,5 @@
 o Make sure criteria without matching columns return no results
 o Setup Databases...
-    - SQLite
     - MS Access
     - PostgreSQL
     - Oracle (express)
@@ -9,7 +8,6 @@ o Setup Databases...
     - DB2
     - Teradata
 o Restructure DatabaseRepositoryTest to work on multiple databases
-    - Test SQLite
     - Test MS Access
     - Test PostgreSQL
     - Test Oracle (express)
@@ -17,6 +15,7 @@ o Restructure DatabaseRepositoryTest to work on multiple databases
     - Test Sybase
     - Test DB2
     - Test Teradata
+o Test Find<NotPresentInDatabase>()
 o Rename / rebrand Xanotech.Repository as NRepository
 o Rename / rebrand Xanotech.Tools as XTools
 o Move RepositoryController from Xanotech.Web to NRepository

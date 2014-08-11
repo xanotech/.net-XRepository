@@ -131,8 +131,20 @@ namespace Xanotech.Repository {
                 sql += Environment.NewLine + "AND kcu.table_schema = " + tableDef.Item1.ToSqlString();
             log(sql);
             IEnumerable<IDictionary<string, object>> results;
-            results = connection.ExecuteReader(sql);
-            return results.Select(r => r["column_name"] as string).OrderBy(cn => cn);
+            try {
+                results = connection.ExecuteReader(sql);
+                return results.Select(record => record["column_name"] as string).OrderBy(cn => cn);
+            } catch (DbException e) {
+                if (e.GetType().Name == "SQLiteException") {
+                    sql = "PRAGMA table_info(" + tableName.ToSqlString() + ")";
+                    log(sql);
+                    results = connection.ExecuteReader(sql);
+                    return results.Where(record => ((long)record["pk"]) == 1)
+                        .Select(record => record["name"] as string)
+                        .OrderBy(n => n);
+                } else
+                    throw;
+            } // end try-catch
         } // end method
 
 
@@ -199,14 +211,26 @@ namespace Xanotech.Repository {
             var splitTableName = tableName.Split('.');
             tableName = splitTableName.Last();
             var sql = "SELECT table_schema, table_name" + Environment.NewLine +
-                    "FROM information_schema.tables" + Environment.NewLine +
-                    "WHERE table_name = " + tableName.ToSqlString();
+                "FROM information_schema.tables" + Environment.NewLine +
+                "WHERE table_name = " + tableName.ToSqlString();
             if (splitTableName.Length > 1)
                 sql += Environment.NewLine + "AND table_schema = " +
                     splitTableName[splitTableName.Length - 2].ToSqlString();
             log(sql);
             IEnumerable<IDictionary<string, object>> results;
-            results = connection.ExecuteReader(sql);
+            try {
+                results = connection.ExecuteReader(sql);
+            } catch (DbException e) {
+                if (e.GetType().Name == "SQLiteException") {
+                    sql = "SELECT NULL AS table_schema, name AS table_name" + Environment.NewLine +
+                        "FROM sqlite_master" + Environment.NewLine +
+                        "WHERE upper(type) = 'TABLE'" + Environment.NewLine +
+                        "AND upper(table_name) = upper(" + tableName.ToSqlString() + ")";
+                    log(sql);
+                    results = connection.ExecuteReader(sql);
+                } else
+                    throw;
+            } // end try-catch
 
             var count = results.Count();
             if (count == 0)

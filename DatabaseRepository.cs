@@ -376,28 +376,14 @@ namespace Xanotech.Repository {
 
 
 
-        private static object ConvertValue(object val, Type toType) {
-            //if (toType == typeof(DateTime?)) {
-            //    if (val is string)
-            //        val = ConvertToDateTimeQ((string)val);
-            //} else if (toType == typeof(bool)) {
-            //    if (val is sbyte)
-            //        val = ConvertToBool((sbyte)val);
-            //    else if (val is long)
-            //        val = ConvertToBool((long)val);
-            //} else if (toType == typeof(bool?)) {
-            //    if (val is sbyte)
-            //        val = ConvertToBoolQ((sbyte)val);
-            //    else if (val is long)
-            //        val = ConvertToBoolQ((long)val);
-            //} // end if-else
-
-            if (typeof(DateTime).IsAssignableFrom(toType))
-                val = Convert.ToDateTime(val);
-            else if (typeof(bool).IsAssignableFrom(toType))
-                val = Convert.ToBoolean(val);
-
-            return val;
+        private object ConvertValue(object val, Type toType) {
+            if (toType.IsNullable())
+                toType = Nullable.GetUnderlyingType(toType);
+            var mirror = DatabaseInfo.GetMirror(typeof(Convert));
+            var convert = mirror.GetMethod("To" + toType.Name, new[] { typeof(object) });
+            if (convert == null)
+                return null;
+            return convert.Invoke(null, new[] { val });
         } // end method
 
 
