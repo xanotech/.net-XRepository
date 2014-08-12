@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Data.OleDb;
 using System.Linq;
 using System.Reflection;
 using Xanotech.Tools;
@@ -134,7 +135,20 @@ namespace Xanotech.Repository {
             try {
                 results = connection.ExecuteReader(sql);
                 return results.Select(record => record["column_name"] as string).OrderBy(cn => cn);
+            } catch (OleDbException e) {
+                // Special MSAccess logic
+                var oleCon = connection as OleDbConnection;
+                if (oleCon != null && e.Message.Contains("information_schema")) {
+                    var keys = oleCon.GetOleDbSchemaTable(OleDbSchemaGuid.Primary_Keys, null);
+                    var filter = "TABLE_NAME = " + tableDef.Item2.ToSqlString();
+                    if (!string.IsNullOrEmpty(tableDef.Item1))
+                        filter += "AND TABLE_SCHEMA = " + tableDef.Item1.ToSqlString();
+                    var keyRows = keys.Select(filter);
+                    return keyRows.Select(r => r["COLUMN_NAME"] as string).OrderBy(cn => cn);
+                } else
+                    throw;
             } catch (DbException e) {
+                // Special SQLite logic
                 if (e.GetType().Name == "SQLiteException") {
                     sql = "PRAGMA table_info(" + tableName.ToSqlString() + ")";
                     log(sql);
@@ -220,11 +234,26 @@ namespace Xanotech.Repository {
             IEnumerable<IDictionary<string, object>> results;
             try {
                 results = connection.ExecuteReader(sql);
+            } catch (OleDbException e) {
+                // Special MSAccess logic
+                var oleCon = connection as OleDbConnection;
+                if (oleCon != null && e.Message.Contains("information_schema")) {
+                    var tables = oleCon.GetOleDbSchemaTable(OleDbSchemaGuid.Tables, null);
+                    var tableRows = tables.Select("TABLE_NAME = " + tableName.ToSqlString());
+                    if (tableRows.Length != 1)
+                        return null;
+
+                    var record = new Dictionary<string, object>();
+                    record["table_schema"] = null;
+                    record["table_name"] = tableRows[0]["TABLE_NAME"];
+                    results = new[] {record};
+                } else
+                    throw;
             } catch (DbException e) {
+                // Special SQLite logic
                 if (e.GetType().Name == "SQLiteException") {
                     sql = "SELECT NULL AS table_schema, name AS table_name" + Environment.NewLine +
-                        "FROM sqlite_master" + Environment.NewLine +
-                        "WHERE upper(type) = 'TABLE'" + Environment.NewLine +
+                        "FROM sqlite_master WHERE upper(type) = 'TABLE'" + Environment.NewLine +
                         "AND upper(table_name) = upper(" + tableName.ToSqlString() + ")";
                     log(sql);
                     results = connection.ExecuteReader(sql);
@@ -238,7 +267,7 @@ namespace Xanotech.Repository {
             else if (count > 1)
                 throw new DataException("The table \"" + tableName +
                     "\" is ambiguous because it is defined in multiple database schemas (" +
-                    string.Join(", ", results.Select(r => r["TABLE_SCHEMA"])) +
+                    string.Join(", ", results.Select(record => record["TABLE_SCHEMA"])) +
                     ").  Use the Repository.Map method to explicitly define how " +
                     tableName + " maps to the database.");
 

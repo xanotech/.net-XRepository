@@ -139,6 +139,7 @@ namespace Xanotech.Repository {
                     cmd.CommandText = "UPDATE " + BackingTableName + Environment.NewLine +
                         "SET SequenceValue = SequenceValue + 1" + Environment.NewLine +
                         "WHERE TableName = @TableName AND ColumnName = @ColumnName";
+                    cmd.Transaction = transaction;
                     cmd.ExecuteNonQuery();
 
                     cmd.CommandText = "SELECT SequenceValue " + Environment.NewLine +
@@ -233,16 +234,18 @@ namespace Xanotech.Repository {
                 cmd.ExecuteNonQuery();
 
                 var thread = new Thread(() => {
+                    WaitForValidateLockingRecord();
                     GetNextValue("<Sequencer.ValidateLocking>", "<Sequencer.ValidateLocking>");
                 });
                 using (var transaction = con.BeginTransaction()) {
                     cmd.CommandText = "UPDATE " + BackingTableName + Environment.NewLine +
                         "SET SequenceValue = SequenceValue + 1" + Environment.NewLine +
                         "WHERE TableName = @TableName AND ColumnName = @ColumnName";
+                    cmd.Transaction = transaction;
                     cmd.ExecuteNonQuery();
 
                     thread.Start();
-                    Thread.Sleep(250);
+                    Thread.Sleep(300);
 
                     cmd.CommandText = "SELECT SequenceValue " + Environment.NewLine +
                         "FROM " + BackingTableName + Environment.NewLine +
@@ -264,6 +267,23 @@ namespace Xanotech.Repository {
             if (sequence > 1)
                 throw new DataException("The database or the table " + BackingTableName +
                     " does not support locking.");
+        } // end method
+
+
+
+        private void WaitForValidateLockingRecord() {
+            bool exists = false;
+            while (!exists)
+            using (var con = openConnectionFunc())
+            using (var cmd = con.CreateCommand()) {
+                cmd.AddParameter("TableName", "<Sequencer.ValidateLocking>");
+                cmd.AddParameter("ColumnName", "<Sequencer.ValidateLocking>");
+                cmd.CommandText = "SELECT COUNT(*) FROM " + BackingTableName + Environment.NewLine +
+                    "WHERE TableName = @TableName AND ColumnName = @ColumnName";
+                var count = cmd.ExecuteScalar();
+                exists = (count as long? ?? count as int? ?? 0) == 1;
+                Thread.Sleep(50);
+            } // end using
         } // end method
 
     } // end class
