@@ -954,7 +954,7 @@ namespace Xanotech.Repository {
             foreach (string tableName in tableNames) {
                 var schema = DatabaseInfo.GetSchemaTable(tableName);
                 for (int r = 0; r < schema.Rows.Count; r++)
-                    if (column == (string)schema.Rows[r]["ColumnName"])
+                    if (column.Is(schema.Rows[r]["ColumnName"] as string))
                         return schema.Rows[r];
             } // end for
             return null;
@@ -965,11 +965,9 @@ namespace Xanotech.Repository {
         private string GetTableForColumn(IEnumerable<string> tableNames, string column) {
             foreach (string tableName in tableNames) {
                 var schema = DatabaseInfo.GetSchemaTable(tableName);
-                for (int r = 0; r < schema.Rows.Count; r++) {
-                    var name = (string)schema.Rows[r][0];
-                    if (column == name)
+                for (int r = 0; r < schema.Rows.Count; r++)
+                    if (column.Is(schema.Rows[r]["ColumnName"] as string))
                         return tableName;
-                } // end for
             } // end for
             return null;
         } // end method

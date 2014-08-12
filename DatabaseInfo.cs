@@ -127,9 +127,9 @@ namespace Xanotech.Repository {
                 "AND (tc.table_name = kcu.table_name OR" + Environment.NewLine +
                 "(tc.table_name IS NULL AND kcu.table_name IS NULL))" + Environment.NewLine +
                 "WHERE tc.constraint_type = 'PRIMARY KEY'" + Environment.NewLine +
-                "AND kcu.table_name = " + tableDef.Item2.ToSqlString();
+                "AND UPPER(kcu.table_name) = " + tableDef.Item2.ToUpper().ToSqlString();
             if (!string.IsNullOrEmpty(tableDef.Item1))
-                sql += Environment.NewLine + "AND kcu.table_schema = " + tableDef.Item1.ToSqlString();
+                sql += Environment.NewLine + "AND UPPER(kcu.table_schema) = " + tableDef.Item1.ToUpper().ToSqlString();
             log(sql);
             IEnumerable<IDictionary<string, object>> results;
             try {
@@ -226,9 +226,9 @@ namespace Xanotech.Repository {
             tableName = splitTableName.Last();
             var sql = "SELECT table_schema, table_name" + Environment.NewLine +
                 "FROM information_schema.tables" + Environment.NewLine +
-                "WHERE table_name = " + tableName.ToSqlString();
+                "WHERE UPPER(table_name) = " + tableName.ToSqlString();
             if (splitTableName.Length > 1)
-                sql += Environment.NewLine + "AND table_schema = " +
+                sql += Environment.NewLine + "AND UPPER(table_schema) = " +
                     splitTableName[splitTableName.Length - 2].ToSqlString();
             log(sql);
             IEnumerable<IDictionary<string, object>> results;
@@ -254,7 +254,7 @@ namespace Xanotech.Repository {
                 if (e.GetType().Name == "SQLiteException") {
                     sql = "SELECT NULL AS table_schema, name AS table_name" + Environment.NewLine +
                         "FROM sqlite_master WHERE upper(type) = 'TABLE'" + Environment.NewLine +
-                        "AND upper(table_name) = upper(" + tableName.ToSqlString() + ")";
+                        "AND upper(table_name) = " + tableName.ToSqlString();
                     log(sql);
                     results = connection.ExecuteReader(sql);
                 } else

@@ -1,15 +1,11 @@
 o Make sure criteria without matching columns return no results
 o Setup Databases...
-    - MS Access
-    - PostgreSQL
     - Oracle (express)
     - Informix
     - Sybase
     - DB2
     - Teradata
 o Restructure DatabaseRepositoryTest to work on multiple databases
-    - Test MS Access
-    - Test PostgreSQL
     - Test Oracle (express)
     - Test Informix
     - Test Sybase
