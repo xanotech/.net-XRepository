@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Data.OleDb;
 using System.Threading;
 using Xanotech.Tools;
 
@@ -108,7 +109,7 @@ namespace Xanotech.Repository {
 
             command.CommandText = "SELECT MAX(" + column + ") FROM " + table;
             object result = command.ExecuteScalar();
-            return result as long? ?? result as int? ?? 0;
+            return DataTool.AsLong(result) ?? 0;
         } // end method
 
 
@@ -138,24 +139,41 @@ namespace Xanotech.Repository {
 
                     cmd.CommandText = "UPDATE " + BackingTableName + Environment.NewLine +
                         "SET SequenceValue = SequenceValue + 1" + Environment.NewLine +
-                        "WHERE TableName = @TableName AND ColumnName = @ColumnName";
+                        "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
+                        "AND ColumnName = " + cmd.FormatParameter("ColumnName");
                     cmd.Transaction = transaction;
-                    cmd.ExecuteNonQuery();
+                    bool loop = true;
+                    while (loop)
+                        try {
+                            cmd.ExecuteNonQuery();
+                            loop = false;
+                        } catch (OleDbException e) {
+                            // Instead of waiting (like every other database in the world)
+                            // MS Access throws this exception.  Simulate waiting by
+                            // repeating the query until it works.
+                            if (e.Message == "Could not update; currently locked.")
+                                Thread.Sleep(100);
+                            else
+                                throw;
+                        } // end try-catch
 
                     cmd.CommandText = "SELECT SequenceValue " + Environment.NewLine +
                         "FROM " + BackingTableName + Environment.NewLine +
-                        "WHERE TableName = @TableName AND ColumnName = @ColumnName";
+                        "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
+                        "AND ColumnName = " + cmd.FormatParameter("ColumnName");
                     var result = cmd.ExecuteScalar();
 
                     if (result == null || result == DBNull.Value) {
                         sequence = GetMaxValue(cmd, table, column) + 1;
                         cmd.CommandText = "INSERT INTO " + BackingTableName + Environment.NewLine +
                             "(TableName, ColumnName, SequenceValue)" + Environment.NewLine +
-                            "VALUES (@TableName, @ColumnName, @SequenceValue)";
+                            "VALUES (" + cmd.FormatParameter("TableName") + ", " +
+                            cmd.FormatParameter("ColumnName") + ", " +
+                            cmd.FormatParameter("SequenceValue") + ")";
                         cmd.AddParameter("SequenceValue", sequence);
                         cmd.ExecuteNonQuery();
                     } else
-                        sequence = result as long? ?? result as int? ?? -1;
+                        sequence = DataTool.AsLong(result) ?? -1;
 
                     transaction.Commit();
                 } // end using
@@ -193,6 +211,28 @@ namespace Xanotech.Repository {
 
 
 
+        private void SetupValidateLockingRecord() {
+            using (var con = openConnectionFunc())
+            using (var cmd = con.CreateCommand()) {
+                cmd.CommandText = "DELETE FROM " + BackingTableName + Environment.NewLine +
+                    "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
+                    "AND ColumnName = " + cmd.FormatParameter("ColumnName");
+                cmd.AddParameter("TableName", "<Sequencer.ValidateLocking>");
+                cmd.AddParameter("ColumnName", "<Sequencer.ValidateLocking>");
+                cmd.ExecuteNonQuery();
+
+                cmd.CommandText = "INSERT INTO " + BackingTableName + Environment.NewLine +
+                    "(TableName, ColumnName, SequenceValue)" + Environment.NewLine +
+                    "VALUES (" + cmd.FormatParameter("TableName") + ", " +
+                    cmd.FormatParameter("ColumnName") + ", " +
+                    cmd.FormatParameter("SequenceValue") + ")";
+                cmd.AddParameter("SequenceValue", 0);
+                cmd.ExecuteNonQuery();
+            } // end using
+        } // end method
+
+
+
         private void ValidateBackingTableSchema(DataTable schema) {
             var isTableNameExists = false;
             var isColumnNameExists = false;
@@ -218,29 +258,22 @@ namespace Xanotech.Repository {
         private void ValidateLocking() {
             object sequenceObject;
 
+            SetupValidateLockingRecord();
+            WaitForValidateLockingRecord();
+
             using (var con = openConnectionFunc())
             using (var cmd = con.CreateCommand()) {
                 cmd.AddParameter("TableName", "<Sequencer.ValidateLocking>");
                 cmd.AddParameter("ColumnName", "<Sequencer.ValidateLocking>");
-                cmd.AddParameter("SequenceValue", 0);
-
-                cmd.CommandText = "DELETE FROM " + BackingTableName + Environment.NewLine +
-                    "WHERE TableName = @TableName AND ColumnName = @ColumnName";
-                cmd.ExecuteNonQuery();
-
-                cmd.CommandText = "INSERT INTO " + BackingTableName + Environment.NewLine +
-                    "(TableName, ColumnName, SequenceValue)" + Environment.NewLine +
-                    "VALUES (@TableName, @ColumnName, @SequenceValue)";
-                cmd.ExecuteNonQuery();
 
                 var thread = new Thread(() => {
-                    WaitForValidateLockingRecord();
                     GetNextValue("<Sequencer.ValidateLocking>", "<Sequencer.ValidateLocking>");
                 });
                 using (var transaction = con.BeginTransaction()) {
                     cmd.CommandText = "UPDATE " + BackingTableName + Environment.NewLine +
                         "SET SequenceValue = SequenceValue + 1" + Environment.NewLine +
-                        "WHERE TableName = @TableName AND ColumnName = @ColumnName";
+                        "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
+                        "AND ColumnName = " + cmd.FormatParameter("ColumnName");
                     cmd.Transaction = transaction;
                     cmd.ExecuteNonQuery();
 
@@ -249,18 +282,20 @@ namespace Xanotech.Repository {
 
                     cmd.CommandText = "SELECT SequenceValue " + Environment.NewLine +
                         "FROM " + BackingTableName + Environment.NewLine +
-                        "WHERE TableName = @TableName AND ColumnName = @ColumnName";
+                        "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
+                        "AND ColumnName = " + cmd.FormatParameter("ColumnName");
                     sequenceObject = cmd.ExecuteScalar();
                     transaction.Commit();
                 } // end using
                 thread.Join();
 
                 cmd.CommandText = "DELETE FROM " + BackingTableName + Environment.NewLine +
-                    "WHERE TableName = @TableName AND ColumnName = @ColumnName";
+                    "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
+                    "AND ColumnName = " + cmd.FormatParameter("ColumnName");
                 cmd.ExecuteNonQuery();
             } // end using
 
-            var sequence = sequenceObject as long? ?? sequenceObject as int? ?? -1;
+            var sequence = DataTool.AsLong(sequenceObject) ?? -1;
             if (sequence == -1)
                 throw new DataException("The SequenceValue column of " + BackingTableName +
                     " does not appear to be an integer type.");
@@ -276,12 +311,13 @@ namespace Xanotech.Repository {
             while (!exists)
             using (var con = openConnectionFunc())
             using (var cmd = con.CreateCommand()) {
+                cmd.CommandText = "SELECT COUNT(*) FROM " + BackingTableName + Environment.NewLine +
+                    "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
+                    "AND ColumnName = " + cmd.FormatParameter("ColumnName");
                 cmd.AddParameter("TableName", "<Sequencer.ValidateLocking>");
                 cmd.AddParameter("ColumnName", "<Sequencer.ValidateLocking>");
-                cmd.CommandText = "SELECT COUNT(*) FROM " + BackingTableName + Environment.NewLine +
-                    "WHERE TableName = @TableName AND ColumnName = @ColumnName";
                 var count = cmd.ExecuteScalar();
-                exists = (count as long? ?? count as int? ?? 0) == 1;
+                exists = (DataTool.AsLong(count) ?? 0) == 1;
                 Thread.Sleep(50);
             } // end using
         } // end method

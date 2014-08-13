@@ -1,17 +1,16 @@
 o Make sure criteria without matching columns return no results
 o Setup Databases...
-    - Oracle (express)
     - Informix
     - Sybase
     - DB2
     - Teradata
 o Restructure DatabaseRepositoryTest to work on multiple databases
-    - Test Oracle (express)
     - Test Informix
     - Test Sybase
     - Test DB2
     - Test Teradata
 o Test Find<NotPresentInDatabase>()
+o Implement and test LIKE and NOT LIKE operator
 o Rename / rebrand Xanotech.Repository as NRepository
 o Rename / rebrand Xanotech.Tools as XTools
 o Move RepositoryController from Xanotech.Web to NRepository

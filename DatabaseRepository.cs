@@ -445,7 +445,7 @@ namespace Xanotech.Repository {
                 var cursor = new Cursor<object>(criteria, Fetch, this);
                 using (var cmd = CreateSelectCommand(tableNames, cursor, true)) {
                     var result = cmd.ExecuteScalar();
-                    return result as long? ?? result as int? ?? 0;
+                    return DataTool.AsLong(result) ?? 0;
                 } // end using
             } finally {
                 CloseConnection();
@@ -501,7 +501,7 @@ namespace Xanotech.Repository {
                         valueString.Append(", ");
                     } // end if
                     sql.Append(column);
-                    valueString.Append('@' + column);
+                    valueString.Append(cmd.FormatParameter(column));
                     cmd.AddParameter(column, values[column],
                         GetScehmaTableRow(new[] {table}, column));
                     isAfterFirst = true;
@@ -648,7 +648,7 @@ namespace Xanotech.Repository {
 
                     if (isAfterFirst)
                         sql.Append("," + Environment.NewLine);
-                    sql.Append(column + " = @" + column);
+                    sql.Append(column + " = " + cmd.FormatParameter(column));
                     cmd.AddParameter(column, values[column],
                         GetScehmaTableRow(new[] { table }, column));
                     isAfterFirst = true;
@@ -916,7 +916,7 @@ namespace Xanotech.Repository {
             if (commandMap[type].ContainsKey(tableName)) {
                 cmd = commandMap[type][tableName];
                 foreach (IDbDataParameter parameter in cmd.Parameters)
-                    parameter.Value = values[parameter.ParameterName] ?? DBNull.Value;
+                    parameter.Set(values[parameter.ParameterName]);
 
                 // Only explicity log here (when the command exists after parameters
                 // are set) because createCmdFunc already logs the command.
@@ -1165,7 +1165,7 @@ namespace Xanotech.Repository {
                             var cursor = new Cursor<object>(criteria, Fetch, this);
                             using (var cmd = CreateSelectCommand(tableNames, cursor, true))
                                 result = cmd.ExecuteScalar();
-                            count = result as long? ?? result as int? ?? 0;
+                            count = DataTool.AsLong(result) ?? 0;
                             using (var cmd = count == 0 ?
                                 CreateInsertCommand(tableName, values) :
                                 CreateUpdateCommand(tableName, values, criteria))
@@ -1175,7 +1175,7 @@ namespace Xanotech.Repository {
                             IDbCommand cmd = GetMappedCommand(countCmdMap, type, tableName, criteria.ToDictionary(),
                                 () => { return CreateSelectCommand(tableNames, cursor, true); });
                             result = cmd.ExecuteScalar();
-                            count = result as long? ?? result as int? ?? 0;
+                            count = DataTool.AsLong(result) ?? 0;
 
                             if (count == 0)
                                 cmd = GetMappedCommand(insertCmdMap, type, tableName, criteriaAndValues,

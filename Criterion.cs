@@ -147,7 +147,7 @@ namespace Xanotech.Repository {
 
                 if (useParameters) {
                     var parameterName = Name + valueCount;
-                    sql.Append('@' + parameterName);
+                    sql.Append(cmd.FormatParameter(parameterName));
                     if (cmd != null)
                         cmd.AddParameter(parameterName, value, schemaRow);
                 } else
@@ -205,7 +205,7 @@ namespace Xanotech.Repository {
                 } // end if
 
                 if (useParameters) {
-                    valStr = '@' + Name;
+                    valStr = cmd.FormatParameter(Name);
                     if (cmd != null)
                         cmd.AddParameter(Name, val, schemaRow);
                 } else
