@@ -125,16 +125,48 @@ namespace Xanotech.Repository {
                 else
                     throw;
             } catch (DbException e) {
+                // Only Informix would throw a IfxException
+                if (e.GetType().Name == "IfxException")
+                    return FindPrimaryKeysForInformix(tableName);
                 // Only SQLite would throw a SQLiteException
-                if (e.GetType().Name == "SQLiteException")
+                else if (e.GetType().Name == "SQLiteException")
                     return FindPrimaryKeysForSqlite(tableName);
                 // Oracle does not support the ANSI standard information_schema
                 // and errors with ORA-00942: table or view does not exist
+                // (exception type name will not work; must check message
+                // because there are multiple data providers for Oracle).
                 else if (e.Message.StartsWith("ORA-00942"))
                     return FindPrimaryKeysForOracle(tableName);
                 else
                     throw;
             } // end try-catch
+        } // end method
+
+
+
+        private IEnumerable<string> FindPrimaryKeysForInformix(string tableName) {
+            var sql = "SELECT cl.colname" + Environment.NewLine +
+                "FROM systables t" + Environment.NewLine +
+                "INNER JOIN sysconstraints cn" + Environment.NewLine +
+                "ON cn.tabid = t.tabid" + Environment.NewLine +
+                "INNER JOIN sysindexes i" + Environment.NewLine +
+                "ON i.idxname = cn.idxname" + Environment.NewLine +
+                "INNER JOIN syscolumns cl" + Environment.NewLine +
+                "ON cl.tabid = t.tabid" + Environment.NewLine +
+                "AND (cl.colno = i.part1 OR cl.colno = i.part2 OR" + Environment.NewLine +
+                "cl.colno = i.part3 OR cl.colno = i.part4 OR" + Environment.NewLine +
+                "cl.colno = i.part5 OR cl.colno = i.part6 OR" + Environment.NewLine +
+                "cl.colno = i.part7 OR cl.colno = i.part8 OR" + Environment.NewLine +
+                "cl.colno = i.part9 OR cl.colno = i.part10 OR" + Environment.NewLine +
+                "cl.colno = i.part11 OR cl.colno = i.part12 OR" + Environment.NewLine +
+                "cl.colno = i.part13 OR cl.colno = i.part14 OR" + Environment.NewLine +
+                "cl.colno = i.part15 OR cl.colno = i.part16)" + Environment.NewLine +
+                "WHERE cn.constrtype = 'P'" + Environment.NewLine +
+                "AND UPPER(t.tabname) = " + tableName.ToUpper().ToSqlString() + Environment.NewLine +
+                "ORDER BY cl.colname";
+            log(sql);
+            var results = connection.ExecuteReader(sql);
+            return results.Select(record => record["colname"] as string);
         } // end method
 
 
@@ -271,11 +303,16 @@ namespace Xanotech.Repository {
                 else
                     throw;
             } catch (DbException e) {
+                // Only Informix would throw an IfxException
+                if (e.GetType().Name == "IfxException")
+                    results = FindTableDefinitionForInformix(tableName);
                 // Only SQLite would throw a SQLiteException
-                if (e.GetType().Name == "SQLiteException")
+                else if (e.GetType().Name == "SQLiteException")
                     results = FindTableDefinitionForSqlite(tableName);
                 // Oracle does not support the ANSI standard information_schema
                 // and errors with ORA-00942: table or view does not exist
+                // (exception type name will not work; must check message
+                // because there are multiple data providers for Oracle).
                 else if (e.Message.StartsWith("ORA-00942"))
                     results = FindTableDefinitionForOracle(tableName);
                 else
@@ -300,6 +337,16 @@ namespace Xanotech.Repository {
             if (!string.IsNullOrEmpty(schemaName))
                 fullName = schemaName + "." + tableName;
             return new Tuple<string, string, string>(schemaName, tableName, fullName);
+        } // end method
+
+
+
+        private IEnumerable<IDictionary<string, object>> FindTableDefinitionForInformix(string tableName) {
+            var sql = "SELECT CAST(NULL AS VARCHAR) AS table_schema," + Environment.NewLine +
+                "tabname AS table_name" + Environment.NewLine +
+                "FROM systables WHERE upper(tabname) = " + tableName.ToSqlString();
+            log(sql);
+            return connection.ExecuteReader(sql);
         } // end method
 
 

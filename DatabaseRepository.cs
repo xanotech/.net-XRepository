@@ -376,18 +376,6 @@ namespace Xanotech.Repository {
 
 
 
-        private object ConvertValue(object val, Type toType) {
-            if (toType.IsNullable())
-                toType = Nullable.GetUnderlyingType(toType);
-            var mirror = DatabaseInfo.GetMirror(typeof(Convert));
-            var convert = mirror.GetMethod("To" + toType.Name, new[] { typeof(object) });
-            if (convert == null)
-                return null;
-            return convert.Invoke(null, new[] { val });
-        } // end method
-
-
-
         public long Count<T>() where T : new() {
             return Count<T>((IEnumerable<Criterion>)null);
         } // end method
@@ -570,7 +558,7 @@ namespace Xanotech.Repository {
                 else {
                     var propMirror = DatabaseInfo.GetMirror(prop.PropertyType);
                     if (!propMirror.IsAssignableFrom(valType))
-                        val = ConvertValue(val, prop.PropertyType);
+                        val = SystemTool.SmartConvert(val, prop.PropertyType);
                 } // end if
 
                 prop.SetValue(obj, val, null);
