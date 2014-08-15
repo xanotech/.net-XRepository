@@ -79,7 +79,31 @@ namespace Xanotech.Repository {
             reference.ValueProperty = property;
             reference.ReferencedType = referencedType;
             return reference;
-        } // end Method
+        } // end method
+
+
+
+        private Tuple<string, string, string> CreateTableDefinition(string tableName,
+            IEnumerable<IDictionary<string, object>> data) {
+            var count = data.Count();
+            if (count == 0)
+                return null;
+            else if (count > 1)
+                throw new DataException("The table \"" + tableName +
+                    "\" is ambiguous because it is defined in multiple database schemas (" +
+                    string.Join(", ", data.Select(record => record["TABLE_SCHEMA"])) +
+                    ").  Use the Repository.Map method to explicitly define how " +
+                    tableName + " maps to the database.");
+
+            var first = data.First();
+
+            tableName = first["table_name"] as string;
+            var schemaName = first["table_schema"] as string;
+            var fullName = tableName;
+            if (!string.IsNullOrEmpty(schemaName))
+                fullName = schemaName + "." + tableName;
+            return new Tuple<string, string, string>(schemaName, tableName, fullName);
+        } // end method
 
 
 
@@ -118,33 +142,36 @@ namespace Xanotech.Repository {
         private IEnumerable<string> FindPrimaryKeys(string tableName) {
             try {
                 return FindPrimaryKeysWithInformationSchema(tableName);
-            } catch (OleDbException e) {
-                // Special MSAccess logic
-                if (e.Message.Contains("information_schema"))
-                    return FindPrimaryKeysWithOleDbSchemaTable(tableName);
-                else
+            } catch (DbException ex) {
+                string exName = ex.GetType().Name.Remove("Exception");
+                var def = HandleException<IEnumerable<string>>("FindPrimaryKeys", exName, tableName);
+                if (def == null)
                     throw;
-            } catch (DbException e) {
-                // Only Informix would throw a IfxException
-                if (e.GetType().Name == "IfxException")
-                    return FindPrimaryKeysForInformix(tableName);
-                // Only SQLite would throw a SQLiteException
-                else if (e.GetType().Name == "SQLiteException")
-                    return FindPrimaryKeysForSqlite(tableName);
-                // Oracle does not support the ANSI standard information_schema
-                // and errors with ORA-00942: table or view does not exist
-                // (exception type name will not work; must check message
-                // because there are multiple data providers for Oracle).
-                else if (e.Message.StartsWith("ORA-00942"))
-                    return FindPrimaryKeysForOracle(tableName);
-                else
-                    throw;
+                return def;
             } // end try-catch
         } // end method
 
 
 
-        private IEnumerable<string> FindPrimaryKeysForInformix(string tableName) {
+        private IEnumerable<string> FindPrimaryKeys_DB2(string tableName) {
+            var tableDef = GetTableDefinition(tableName);
+            var sql = "SELECT KCU.COLNAME" + Environment.NewLine +
+                "FROM SYSCAT.KEYCOLUSE KCU" + Environment.NewLine +
+                "INNER JOIN SYSCAT.TABCONST TC" + Environment.NewLine +
+                "ON TC.CONSTNAME = KCU.CONSTNAME" + Environment.NewLine +
+                "WHERE TC.TYPE = 'P'" + Environment.NewLine +
+                "AND UPPER(TRIM(KCU.TABNAME)) = " + tableDef.Item2.ToUpper().ToSqlString();
+            if (!string.IsNullOrEmpty(tableDef.Item1))
+                sql += Environment.NewLine + "AND UPPER(TRIM(KCU.TABSCHEMA)) = " + tableDef.Item1.ToUpper().ToSqlString();
+            sql += Environment.NewLine + "ORDER BY KCU.COLNAME";
+            log(sql);
+            var results = connection.ExecuteReader(sql);
+            return results.Select(record => record["colname"] as string);
+        } // end method
+
+
+
+        private IEnumerable<string> FindPrimaryKeys_Ifx(string tableName) {
             var sql = "SELECT cl.colname" + Environment.NewLine +
                 "FROM systables t" + Environment.NewLine +
                 "INNER JOIN sysconstraints cn" + Environment.NewLine +
@@ -171,7 +198,20 @@ namespace Xanotech.Repository {
 
 
 
-        private IEnumerable<string> FindPrimaryKeysForOracle(string tableName) {
+        private IEnumerable<string> FindPrimaryKeys_OleDb(string tableName) {
+            var tableDef = GetTableDefinition(tableName);
+            var filter = "TABLE_NAME = " + tableDef.Item2.ToSqlString();
+            if (!string.IsNullOrEmpty(tableDef.Item1))
+                filter += "AND TABLE_SCHEMA = " + tableDef.Item1.ToSqlString();
+            var oleCon = connection as OleDbConnection;
+            var keys = oleCon.GetOleDbSchemaTable(OleDbSchemaGuid.Primary_Keys, null);
+            var keyRows = keys.Select(filter);
+            return keyRows.Select(r => r["COLUMN_NAME"] as string).OrderBy(cn => cn);
+        } // end method
+
+
+
+        private IEnumerable<string> FindPrimaryKeys_Oracle(string tableName) {
             var sql = "SELECT acc.column_name" + Environment.NewLine +
                 "FROM all_constraints ac" + Environment.NewLine +
                 "INNER JOIN all_cons_columns acc" + Environment.NewLine +
@@ -187,7 +227,7 @@ namespace Xanotech.Repository {
 
 
 
-        private IEnumerable<string> FindPrimaryKeysForSqlite(string tableName) {
+        private IEnumerable<string> FindPrimaryKeys_SQLite(string tableName) {
             var sql = "PRAGMA table_info(" + tableName.ToSqlString() + ")";
             log(sql);
             var results = connection.ExecuteReader(sql);
@@ -217,19 +257,6 @@ namespace Xanotech.Repository {
             log(sql);
             var results = connection.ExecuteReader(sql);
             return results.Select(record => record["column_name"] as string);
-        } // end method
-
-
-
-        private IEnumerable<string> FindPrimaryKeysWithOleDbSchemaTable(string tableName) {
-            var tableDef = GetTableDefinition(tableName);
-            var filter = "TABLE_NAME = " + tableDef.Item2.ToSqlString();
-            if (!string.IsNullOrEmpty(tableDef.Item1))
-                filter += "AND TABLE_SCHEMA = " + tableDef.Item1.ToSqlString();
-            var oleCon = connection as OleDbConnection;
-            var keys = oleCon.GetOleDbSchemaTable(OleDbSchemaGuid.Primary_Keys, null);
-            var keyRows = keys.Select(filter);
-            return keyRows.Select(r => r["COLUMN_NAME"] as string).OrderBy(cn => cn);
         } // end method
 
 
@@ -293,99 +320,44 @@ namespace Xanotech.Repository {
 
 
         private Tuple<string, string, string> FindTableDefinition(string tableName) {
-            IEnumerable<IDictionary<string, object>> results;
             try {
-                results = FindTableDefinitionWithInformationSchema(tableName);
-            } catch (OleDbException e) {
-                // Special MSAccess logic
-                if (e.Message.Contains("information_schema"))
-                    results = FindTableDefinitionWithOleDbSchemaTable(tableName);
-                else
+                return FindTableDefinitionWithInformationSchema(tableName);
+            } catch (DbException ex) {
+                string exName = ex.GetType().Name.Remove("Exception");
+                var def = HandleException<Tuple<string, string, string>>("FindTableDefinition", exName, tableName);
+                if (def == null)
                     throw;
-            } catch (DbException e) {
-                // Only Informix would throw an IfxException
-                if (e.GetType().Name == "IfxException")
-                    results = FindTableDefinitionForInformix(tableName);
-                // Only SQLite would throw a SQLiteException
-                else if (e.GetType().Name == "SQLiteException")
-                    results = FindTableDefinitionForSqlite(tableName);
-                // Oracle does not support the ANSI standard information_schema
-                // and errors with ORA-00942: table or view does not exist
-                // (exception type name will not work; must check message
-                // because there are multiple data providers for Oracle).
-                else if (e.Message.StartsWith("ORA-00942"))
-                    results = FindTableDefinitionForOracle(tableName);
-                else
-                    throw;
+                return def;
             } // end try-catch
-
-            var count = results.Count();
-            if (count == 0)
-                return null;
-            else if (count > 1)
-                throw new DataException("The table \"" + tableName +
-                    "\" is ambiguous because it is defined in multiple database schemas (" +
-                    string.Join(", ", results.Select(record => record["TABLE_SCHEMA"])) +
-                    ").  Use the Repository.Map method to explicitly define how " +
-                    tableName + " maps to the database.");
-
-            var first = results.First();
-
-            tableName = first["table_name"] as string;
-            var schemaName = first["table_schema"] as string;
-            var fullName = tableName;
-            if (!string.IsNullOrEmpty(schemaName))
-                fullName = schemaName + "." + tableName;
-            return new Tuple<string, string, string>(schemaName, tableName, fullName);
         } // end method
 
 
 
-        private IEnumerable<IDictionary<string, object>> FindTableDefinitionForInformix(string tableName) {
+        private Tuple<string, string, string> FindTableDefinition_DB2(string tableName) {
+            var splitTableName = tableName.Split('.');
+            tableName = splitTableName.Last();
+            var sql = "SELECT TRIM(CREATOR) AS table_schema, TRIM(NAME) AS table_name" + Environment.NewLine +
+                "FROM sysibm.systables WHERE UPPER(TRIM(NAME)) = " + tableName.ToSqlString();
+            if (splitTableName.Length > 1)
+                sql += Environment.NewLine + "AND UPPER(TRIM(CREATOR)) = " +
+                    splitTableName.First().ToSqlString();
+            log(sql);
+            return CreateTableDefinition(tableName, connection.ExecuteReader(sql));
+        } // end method
+
+
+
+        private Tuple<string, string, string> FindTableDefinition_Ifx(string tableName) {
             var sql = "SELECT CAST(NULL AS VARCHAR) AS table_schema," + Environment.NewLine +
                 "tabname AS table_name" + Environment.NewLine +
                 "FROM systables WHERE upper(tabname) = " + tableName.ToSqlString();
             log(sql);
-            return connection.ExecuteReader(sql);
+            return CreateTableDefinition(tableName, connection.ExecuteReader(sql));
         } // end method
 
 
 
-        private IEnumerable<IDictionary<string, object>> FindTableDefinitionForOracle(string tableName) {
-            var sql = "SELECT NULL AS table_schema, table_name" + Environment.NewLine +
-                "FROM all_tables WHERE upper(table_name) = " + tableName.ToSqlString();
-            log(sql);
-            return connection.ExecuteReader(sql);
-        } // end method
-
-
-
-        private IEnumerable<IDictionary<string, object>> FindTableDefinitionForSqlite(string tableName) {
-            var sql = "SELECT NULL AS table_schema, name AS table_name" + Environment.NewLine +
-                "FROM sqlite_master WHERE upper(type) = 'TABLE'" + Environment.NewLine +
-                "AND upper(table_name) = " + tableName.ToSqlString();
-            log(sql);
-            return connection.ExecuteReader(sql);
-        } // end method
-
-
-
-        private IEnumerable<IDictionary<string, object>> FindTableDefinitionWithInformationSchema(string tableName) {
-            var splitTableName = tableName.Split('.');
-            tableName = splitTableName.Last();
-            var sql = "SELECT table_schema, table_name" + Environment.NewLine +
-                "FROM information_schema.tables" + Environment.NewLine +
-                "WHERE UPPER(table_name) = " + tableName.ToSqlString();
-            if (splitTableName.Length > 1)
-                sql += Environment.NewLine + "AND UPPER(table_schema) = " +
-                    splitTableName[splitTableName.Length - 2].ToSqlString();
-            log(sql);
-            return connection.ExecuteReader(sql);
-        } // end method
-
-
-
-        private IEnumerable<IDictionary<string, object>> FindTableDefinitionWithOleDbSchemaTable(string tableName) {
+        private Tuple<string, string, string> FindTableDefinition_OleDb(string tableName) {
             var oleCon = connection as OleDbConnection;
             var tables = oleCon.GetOleDbSchemaTable(OleDbSchemaGuid.Tables, null);
             var tableRows = tables.Select("TABLE_NAME = " + tableName.ToSqlString());
@@ -395,7 +367,41 @@ namespace Xanotech.Repository {
             var record = new Dictionary<string, object>();
             record["table_schema"] = null;
             record["table_name"] = tableRows[0]["TABLE_NAME"];
-            return new[] {record};
+            return CreateTableDefinition(tableName, new[] { record });
+        } // end method
+
+
+
+        private Tuple<string, string, string> FindTableDefinition_Oracle(string tableName) {
+            var sql = "SELECT NULL AS table_schema, table_name" + Environment.NewLine +
+                "FROM all_tables WHERE upper(table_name) = " + tableName.ToSqlString();
+            log(sql);
+            return CreateTableDefinition(tableName, connection.ExecuteReader(sql));
+        } // end method
+
+
+
+        private Tuple<string, string, string> FindTableDefinition_SQLite(string tableName) {
+            var sql = "SELECT NULL AS table_schema, name AS table_name" + Environment.NewLine +
+                "FROM sqlite_master WHERE upper(type) = 'TABLE'" + Environment.NewLine +
+                "AND upper(table_name) = " + tableName.ToSqlString();
+            log(sql);
+            return CreateTableDefinition(tableName, connection.ExecuteReader(sql));
+        } // end method
+
+
+
+        private Tuple<string, string, string> FindTableDefinitionWithInformationSchema(string tableName) {
+            var splitTableName = tableName.Split('.');
+            tableName = splitTableName.Last();
+            var sql = "SELECT table_schema, table_name" + Environment.NewLine +
+                "FROM information_schema.tables" + Environment.NewLine +
+                "WHERE UPPER(table_name) = " + tableName.ToSqlString();
+            if (splitTableName.Length > 1)
+                sql += Environment.NewLine + "AND UPPER(table_schema) = " +
+                    splitTableName.First().ToSqlString();
+            log(sql);
+            return CreateTableDefinition(tableName, connection.ExecuteReader(sql));
         } // end method
 
 
@@ -502,6 +508,17 @@ namespace Xanotech.Repository {
 
             var info = infoCache[connection.ConnectionString];
             return info.tableNamesCache.GetValue(type, FindTableNames);
+        } // end method
+
+
+
+        private T HandleException<T>(string prefix, string suffix, object parameter) {
+            var mirror = mirrorCache[GetType()];
+            var handler = mirror.GetMethod(prefix + '_' + suffix,
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            if (handler == null)
+                return default(T);
+            return (T)handler.Invoke(this, new[] {parameter});
         } // end method
 
 
