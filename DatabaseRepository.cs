@@ -70,6 +70,7 @@ namespace Xanotech.Repository {
             this.openConnectionFunc = openConnectionFunc;
             CreationStack = new StackTrace(true).ToString();
             IsReferenceAssignmentActive = true;
+            IsUsingLikeForEquals = false;
         } // end constructor
 
 
@@ -280,12 +281,12 @@ namespace Xanotech.Repository {
             foreach (var criterion in criteria) {
                 var schemaRow = GetScehmaTableRow(tableNames, criterion.Name);
                 var table = GetTableForColumn(tableNames, criterion.Name);
-                if (schemaRow == null || table == null)
-                    continue;
-
                 sql.Append(Environment.NewLine);
                 sql.Append(whereAdded ? "AND " : "WHERE ");
-                sql.Append(table + '.' + criterion.ToString(true, cmd, schemaRow));
+                if (schemaRow == null || table == null)
+                    sql.Append(criterion.Name.ToSqlString() + " = 'does not map to a column'");
+                else
+                    sql.Append(table + '.' + criterion.ToString(true, cmd, schemaRow));
                 whereAdded = true;
             } // end foreach
             cmd.CommandText += sql;
@@ -384,7 +385,7 @@ namespace Xanotech.Repository {
 
         public long Count<T>(IEnumerable<Criterion> criteria) where T : new() {
             try {
-                var tableNames = DatabaseInfo.GetTableNames(typeof(T));
+                var tableNames = GetTableNames(typeof(T));
                 return Count(tableNames, criteria);
             } finally {
                 CloseConnection();
@@ -430,6 +431,8 @@ namespace Xanotech.Repository {
 
         protected long Count(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria) {
             try {
+                if (IsUsingLikeForEquals)
+                    criteria = SwitchEqualsToLike(criteria);
                 var cursor = new Cursor<object>(criteria, Fetch, this);
                 using (var cmd = CreateSelectCommand(tableNames, cursor, true)) {
                     var result = cmd.ExecuteScalar();
@@ -699,7 +702,9 @@ namespace Xanotech.Repository {
                     idObjectMap = new Dictionary<Type, IDictionary<object, object>>();
 
                 IEnumerable<T> objs;
-                var tableNames = DatabaseInfo.GetTableNames(typeof(T));
+                var tableNames = GetTableNames(typeof(T));
+                if (IsUsingLikeForEquals)
+                    cursor.criteria = SwitchEqualsToLike(cursor.criteria);
                 using (var cmd = CreateSelectCommand(tableNames, cursor, false))
                     objs = CreateObjects<T>(cmd, cursor);
                 foreach (var obj in objs) {
@@ -962,6 +967,15 @@ namespace Xanotech.Repository {
 
 
 
+        private IEnumerable<string> GetTableNames(Type type) {
+            var tableNames = DatabaseInfo.GetTableNames(type);
+            if (!tableNames.Any())
+                throw new DataException("There are no tables associated with \"" + type.FullName + "\".");
+            return tableNames;
+        } // end method
+
+
+
         private IDictionary<string, object> GetValues(object obj, string tableName) {
             var values = new Dictionary<string, object>();
             var schema = DatabaseInfo.GetSchemaTable(tableName);
@@ -1004,6 +1018,10 @@ namespace Xanotech.Repository {
 
 
 
+        public bool IsUsingLikeForEquals { get; set; }
+
+        
+        
         private Action<string> log;
         public Action<string> Log {
             get {
@@ -1078,7 +1096,7 @@ namespace Xanotech.Repository {
                     if (!cmdMap.ContainsKey(type))
                         cmdMap[type] = new Dictionary<string, IDbCommand>();
 
-                    var tableNames = DatabaseInfo.GetTableNames(type);
+                    var tableNames = GetTableNames(type);
                     foreach (var tableName in tableNames) {
                         var criteria = GetPrimaryKeyCriteria(obj, tableName);
 
@@ -1132,7 +1150,7 @@ namespace Xanotech.Repository {
                     if (!updateCmdMap.ContainsKey(type))
                         updateCmdMap[type] = new Dictionary<string, IDbCommand>();
 
-                    var tableNames = DatabaseInfo.GetTableNames(type);
+                    var tableNames = GetTableNames(type);
                     foreach (var tableName in tableNames) {
                         ApplySequenceId(obj, tableName);
                         var criteria = GetPrimaryKeyCriteria(obj, tableName);
@@ -1263,6 +1281,25 @@ namespace Xanotech.Repository {
             SetManyReferences(objs, references);
             FindReferenceIds(objs, references);
             SetOneReferences(objs, references);
+        } // end method
+
+
+
+        private static IEnumerable<Criterion> SwitchEqualsToLike(IEnumerable<Criterion> criteria) {
+            if (criteria == null)
+                return null;
+
+            var switchedCriteria = new List<Criterion>();
+            foreach (var criterion in criteria) {
+                var switchedCriterion = new Criterion(criterion.Name,
+                    criterion.Operation, criterion.Value);
+                if (switchedCriterion.Operation == Criterion.OperationType.EqualTo)
+                    switchedCriterion.Operation = Criterion.OperationType.Like;
+                if (switchedCriterion.Operation == Criterion.OperationType.NotEqualTo)
+                    switchedCriterion.Operation = Criterion.OperationType.NotLike;
+                switchedCriteria.Add(switchedCriterion);
+            } // end foreach
+            return switchedCriteria;
         } // end method
 
     } // end class

@@ -144,10 +144,13 @@ namespace Xanotech.Repository {
                 return FindPrimaryKeysWithInformationSchema(tableName);
             } catch (DbException ex) {
                 string exName = ex.GetType().Name.Remove("Exception");
-                var def = HandleException<IEnumerable<string>>("FindPrimaryKeys", exName, tableName);
-                if (def == null)
-                    throw;
-                return def;
+                try {
+                    var def = HandleException<IEnumerable<string>>("FindPrimaryKeys", exName, tableName);
+                    return def;
+                } catch (MissingMethodException) {
+                    // Swallow the MissingMethodException and just throw the original
+                } // end try-catch
+                throw;
             } // end try-catch
         } // end method
 
@@ -324,10 +327,13 @@ namespace Xanotech.Repository {
                 return FindTableDefinitionWithInformationSchema(tableName);
             } catch (DbException ex) {
                 string exName = ex.GetType().Name.Remove("Exception");
-                var def = HandleException<Tuple<string, string, string>>("FindTableDefinition", exName, tableName);
-                if (def == null)
-                    throw;
-                return def;
+                try {
+                    var def = HandleException<Tuple<string, string, string>>("FindTableDefinition", exName, tableName);
+                    return def;
+                } catch (MissingMethodException) {
+                    // Swallow the MissingMethodException and just throw the original
+                } // end try-catch
+                throw;
             } // end try-catch
         } // end method
 
@@ -513,11 +519,13 @@ namespace Xanotech.Repository {
 
 
         private T HandleException<T>(string prefix, string suffix, object parameter) {
-            var mirror = mirrorCache[GetType()];
-            var handler = mirror.GetMethod(prefix + '_' + suffix,
+            var type = GetType();
+            var mirror = mirrorCache[type];
+            var methodName = prefix + '_' + suffix;
+            var handler = mirror.GetMethod(methodName,
                 BindingFlags.Instance | BindingFlags.NonPublic);
             if (handler == null)
-                return default(T);
+                throw new MissingMethodException(type.FullName, methodName);
             return (T)handler.Invoke(this, new[] {parameter});
         } // end method
 

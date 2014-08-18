@@ -1,11 +1,3 @@
-o Make sure criteria without matching columns return no results
-o Setup Databases...
-    - Sybase
-    - Teradata
-o Restructure DatabaseRepositoryTest to work on multiple databases
-    - Test Sybase
-    - Test Teradata
-o Test Find<NotPresentInDatabase>()
 o Implement and test LIKE and NOT LIKE operator
 o Rename / rebrand Xanotech.Repository as NRepository
 o Rename / rebrand Xanotech.Tools as XTools
@@ -15,6 +7,10 @@ o Create RepositoryController and JSRepository.js
     - Split out query logic common to both NRepository and RepositoryController
 o Implement Security for NRepository and JSRepository
 o Figure out how to make Categorized Lookup Tables work with References
+o Move client-server databases to another computer
+o Setup and test databases...
+    - Sybase
+    - Teradata
 o Implement Producer / Consumer for Reads
 o Test DatabaseRepository
     - Test Improved Reference Initialization (use large random set of test data)

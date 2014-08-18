@@ -129,5 +129,11 @@ namespace Xanotech.Repository {
             return Sort(sortByDictionary);
         } // end method
 
+
+
+        public Cursor<T> Sort(params string[] sortBy) {
+            return Sort((IEnumerable<string>)sortBy);
+        } // end method
+
     } // end class
 } // end namespace

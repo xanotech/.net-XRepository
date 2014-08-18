@@ -11,7 +11,7 @@ namespace Xanotech.Repository {
     public class Criterion {
 
         public enum OperationType {
-            EqualTo, GreaterThan, GreaterThanOrEqualTo, LessThan, LessThanOrEqualTo, NotEqualTo
+            EqualTo, GreaterThan, GreaterThanOrEqualTo, LessThan, LessThanOrEqualTo, Like, NotEqualTo, NotLike
         } // end enum
 
         private static Cache<Type, Mirror> mirrorCache = new Cache<Type, Mirror>(t => new Mirror(t));
@@ -34,8 +34,12 @@ namespace Xanotech.Repository {
                     return "<";
                 case OperationType.LessThanOrEqualTo:
                     return "<=";
+                case OperationType.Like:
+                    return "LIKE";
                 case OperationType.NotEqualTo:
                     return "!=";
+                case OperationType.NotLike:
+                    return "NOT LIKE";
                 default:
                     return "=";
             }
@@ -46,7 +50,7 @@ namespace Xanotech.Repository {
         private static OperationType ConvertStringToOperation(string str) {
             if (str == null)
                 return OperationType.EqualTo;
-            str = str.Trim();
+            str = str.Trim().ToUpper();
 
             switch (str) {
                 case "=":
@@ -63,10 +67,14 @@ namespace Xanotech.Repository {
                 case "<>":
                 case "!=":
                     return OperationType.NotEqualTo;
+                case "LIKE":
+                    return OperationType.Like;
+                case "NOT LIKE":
+                    return OperationType.NotLike;
             }
 
             throw new FormatException("OperationType string \"" + str + "\" is invalid.  " +
-                "Acceptable values are: =, >, >=, <, <=, != (== and <> are also accepted).");
+                "Acceptable values are: =, >, >=, <, <=, !=, LIKE, NOT LIKE (== and <> are also accepted).");
         } // end method
 
 
@@ -180,8 +188,10 @@ namespace Xanotech.Repository {
             if (valList != null)
                 switch (Operation) {
                     case OperationType.EqualTo:
+                    case OperationType.Like:
                     case OperationType.NotEqualTo:
-                        opStr = Operation == OperationType.EqualTo ? "IN" : "NOT IN";
+                    case OperationType.NotLike:
+                        opStr = (Operation == OperationType.EqualTo || Operation == OperationType.Like) ? "IN" : "NOT IN";
                         valStr = FormatValueList(valList, useParameters, cmd, schemaRow);
                         break;
                     case OperationType.GreaterThan:
@@ -198,9 +208,11 @@ namespace Xanotech.Repository {
 
             if (valList == null) {
                 if (val == null) {
-                    if (Operation == OperationType.EqualTo)
+                    if (Operation == OperationType.EqualTo ||
+                        Operation == OperationType.Like)
                         opStr = "IS";
-                    else if (Operation == OperationType.NotEqualTo)
+                    else if (Operation == OperationType.NotEqualTo ||
+                        Operation == OperationType.NotLike)
                         opStr = "IS NOT";
                 } // end if
 
