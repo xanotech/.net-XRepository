@@ -4,9 +4,9 @@ using System.Data;
 using System.Data.Common;
 using System.Data.OleDb;
 using System.Threading;
-using Xanotech.Tools;
+using XTools;
 
-namespace Xanotech.Repository {
+namespace XRepository {
 
     /// <summary>
     ///   Used to sequence columns of database tables.

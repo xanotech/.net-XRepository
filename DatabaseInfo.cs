@@ -5,9 +5,9 @@ using System.Data.Common;
 using System.Data.OleDb;
 using System.Linq;
 using System.Reflection;
-using Xanotech.Tools;
+using XTools;
 
-namespace Xanotech.Repository {
+namespace XRepository {
     public class DatabaseInfo {
 
         public enum PagingMechanism {

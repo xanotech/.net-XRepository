@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace Xanotech.Repository {
+namespace XRepository {
     class LazyLoadEnumerable<T> : IEnumerable<T> where T : new() {
 
         private List<T> data;

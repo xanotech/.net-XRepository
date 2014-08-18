@@ -8,11 +8,12 @@
     <ProjectGuid>{9A742CFF-35E8-4541-B83B-5A4DFBE7FA4D}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Xanotech.Repository</RootNamespace>
-    <AssemblyName>Xanotech.Repository</AssemblyName>
+    <RootNamespace>XRepository</RootNamespace>
+    <AssemblyName>XRepository</AssemblyName>
     <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
-    <TargetFrameworkProfile>Client</TargetFrameworkProfile>
+    <TargetFrameworkProfile>
+    </TargetFrameworkProfile>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -36,25 +37,43 @@
     <Reference Include="System.Core" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Web" />
+    <Reference Include="System.Web.Http, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Web.Http.WebHost, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Web.Mvc, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+    <Reference Include="System.Web.Routing" />
     <Reference Include="System.XML" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConnectionInfo.cs" />
     <Compile Include="CriterionTool.cs" />
     <Compile Include="DatabaseInfoCache.cs" />
-    <Compile Include="DatabaseRepository.cs" />
+    <Compile Include="NRepository.cs" />
     <Compile Include="DatabaseInfo.cs" />
     <Compile Include="IRepository.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Criterion.cs" />
     <Compile Include="LazyLoadEnumerable.cs" />
     <Compile Include="Reference.cs" />
+    <Compile Include="RepositoryController.cs" />
     <Compile Include="Sequencer.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Xanotech.Tools\Xanotech.Tools.csproj">
+    <ProjectReference Include="..\XTools\XTools.csproj">
       <Project>{3EEC986C-679B-4CFE-A858-C10A2BE88B3A}</Project>
-      <Name>Xanotech.Tools</Name>
+      <Name>XTools</Name>
       <Private>False</Private>
     </ProjectReference>
   </ItemGroup>

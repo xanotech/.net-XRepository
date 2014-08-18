@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace Xanotech.Repository {
+namespace XRepository {
     public static class CriterionTool {
 
         public static bool HasNullValue(this IEnumerable<Criterion> criteria) {

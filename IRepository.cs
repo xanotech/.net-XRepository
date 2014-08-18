@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace Xanotech.Repository {
+namespace XRepository {
     public interface IRepository {
         long Count<T>() where T : new();
         long Count<T>(IEnumerable<Criterion> criteria) where T : new();

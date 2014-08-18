@@ -1,9 +1,9 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using Xanotech.Tools;
+using XTools;
 
-namespace Xanotech.Repository {
+namespace XRepository {
     public class Cursor<T> : IEnumerable<T> where T : new() {
 
         // Used by the spawning repository for populating data.

@@ -8,11 +8,10 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using Xanotech.Tools;
+using XTools;
 
-namespace Xanotech.Repository {
-
-    public class DatabaseRepository : IRepository {
+namespace XRepository {
+    public class NRepository : IRepository {
 
         private const BindingFlags CaseInsensitiveBinding =
             BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public;
@@ -66,7 +65,7 @@ namespace Xanotech.Repository {
 
 
 
-        public DatabaseRepository(Func<IDbConnection> openConnectionFunc) {
+        public NRepository(Func<IDbConnection> openConnectionFunc) {
             this.openConnectionFunc = openConnectionFunc;
             CreationStack = new StackTrace(true).ToString();
             IsReferenceAssignmentActive = true;
@@ -75,7 +74,7 @@ namespace Xanotech.Repository {
 
 
 
-        public DatabaseRepository(string connectionStringName) :
+        public NRepository(string connectionStringName) :
             this(() => { return DataTool.OpenConnection(connectionStringName); }) {
         } // end constructor
 
@@ -323,16 +322,16 @@ namespace Xanotech.Repository {
             foreach (var info in connectionInfoMap.Values)
                 if ((now - info.CreationDatetime).Seconds > seconds)
                     throw new DataException("An unclosed database connection has been detected." + nl + nl +
-                        "This exception is likely due to either 1) a bug in DatabaseRepository, " +
+                        "This exception is likely due to either 1) a bug in NRepository, " +
                         "2) an undisposed Transaction returned from BeginTransaction, or " +
-                        "3) a bug in a class that extends DatabaseRepository.  This exception " +
+                        "3) a bug in a class that extends NRepository.  This exception " +
                         "can only thrown when a Debugger is attached to the running process " +
                         "(so it should not appear in a live application)." + nl + nl +
                         "Information About the Unclosed Connection" + nl +
                         "Creation Date / Time: " + info.CreationDatetime + nl +
                         "SQL Command(s) Executed..." + nl +
                         string.Join(Environment.NewLine, info.SqlLog) + nl +
-                        "DatabaseRepository.CreationStack..." + nl +
+                        "NRepository.CreationStack..." + nl +
                         info.RepositoryCreationStack);
         } // end method
 
@@ -445,20 +444,20 @@ namespace Xanotech.Repository {
 
 
 
-        public static DatabaseRepository Create<T>(string connectionString) where T : IDbConnection, new() {
-            return new DatabaseRepository(() => { return DataTool.OpenConnection<T>(connectionString); });
+        public static NRepository Create<T>(string connectionString) where T : IDbConnection, new() {
+            return new NRepository(() => { return DataTool.OpenConnection<T>(connectionString); });
         } // end method
 
 
 
-        public static DatabaseRepository Create(Func<IDbConnection> openConnectionFunc) {
-            return new DatabaseRepository(openConnectionFunc);
+        public static NRepository Create(Func<IDbConnection> openConnectionFunc) {
+            return new NRepository(openConnectionFunc);
         } // end method
 
 
 
-        public static DatabaseRepository Create(string connectionStringName) {
-            return new DatabaseRepository(connectionStringName);
+        public static NRepository Create(string connectionStringName) {
+            return new NRepository(connectionStringName);
         } // end method
 
 
@@ -679,7 +678,7 @@ namespace Xanotech.Repository {
 
         private static void DefaultLog(string msg) {
             if (Debugger.IsAttached)
-                Debug.WriteLine("[" + typeof(DatabaseRepository).FullName + "] " + msg);
+                Debug.WriteLine("[" + typeof(NRepository).FullName + "] " + msg);
         } // end method
 
 

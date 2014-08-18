@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using Xanotech.Tools;
+using XTools;
 
-namespace Xanotech.Repository {
+namespace XRepository {
     class Reference {
 
         internal bool IsMany { get; set; } // end property

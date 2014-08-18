@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Reflection;
-using Xanotech.Tools;
+using XTools;
 
-namespace Xanotech.Repository {
+namespace XRepository {
     public class ConnectionInfo {
         private IList<string> sqlLog = new List<string>();
         

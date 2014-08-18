@@ -5,9 +5,9 @@ using System.Data;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using Xanotech.Tools;
+using XTools;
 
-namespace Xanotech.Repository {
+namespace XRepository {
     public class Criterion {
 
         public enum OperationType {

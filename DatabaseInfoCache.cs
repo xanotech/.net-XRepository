@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Reflection;
-using Xanotech.Tools;
+using XTools;
 
-namespace Xanotech.Repository {
+namespace XRepository {
     class DatabaseInfoCache {
         internal DatabaseInfo.PagingMechanism? pagingMechanism;
         internal Sequencer sequencer;
