@@ -16,39 +16,10 @@ namespace XRepository {
         private const BindingFlags CaseInsensitiveBinding =
             BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public;
 
-        /// <summary>
-        ///   A static collection of connectionId values with their associated ConnectionInfos.
-        /// </summary>
-        private static ConcurrentDictionary<long, ConnectionInfo> connectionInfoMap =
-            new ConcurrentDictionary<long, ConnectionInfo>();
-
-        /// <summary>
-        ///   Holds the next value to be assigned to connectionId when a new connection is created.
-        /// </summary>
-        private static long nextConnectionId = 0;
-
-        /// <summary>
-        ///   Used as a lock for thread-safe access to nextConnectionId.
-        /// </summary>
-        private static object nextConnectionIdLock = new object(); // Used for thread locking when accessing nextConnectionId.
+        private static Cache<string, TypeInfoCache> infoCache = new Cache<string, TypeInfoCache>(s => new TypeInfoCache());
+        private static Cache<Type, Mirror> mirrorCache = new Cache<Type, Mirror>(t => new Mirror(t));
 
 
-
-        /// <summary>
-        ///   Created by the Connection property as it is needed during a repository call
-        ///   (ie Count, Find, Save, Remove, etc).  At the the end of the call, it is Disposed.
-        ///   It should only be accessed via the Connection property.
-        /// </summary>
-        private IDbConnection connection;
-
-
-
-        /// <summary>
-        ///   Holds the "id" of the current connection.  The id values are simply consecutive
-        ///   integers stored in the static nextConnectionId which is incremented whenever
-        ///   a new connection is created.
-        /// </summary>
-        private long connectionId;
 
         /// <summary>
         ///   Used exclusively when retrieving objects from the database for the purpose of
@@ -65,9 +36,9 @@ namespace XRepository {
 
 
 
-        public NRepository(Func<IDbConnection> openConnectionFunc) {
-            this.openConnectionFunc = openConnectionFunc;
+        public NRepository(Func<IDbConnection> openConnection) {
             CreationStack = new StackTrace(true).ToString();
+            openConnectionFunc = openConnection;
             IsReferenceAssignmentActive = true;
             IsUsingLikeForEquals = false;
         } // end constructor
@@ -80,220 +51,10 @@ namespace XRepository {
 
 
 
-        //private static bool ConvertToBool(long val) {
-        //    return val == 1;
-        //} // end method
-
-
-
-        //private static bool? ConvertToBoolQ(long val) {
-        //    bool? result = null;
-        //    if (val == 0)
-        //        result = false;
-        //    else if (val == 1)
-        //        result = true;
-        //    return result;
-        //} // end method
-
-
-
-        //private static DateTime? ConvertToDateTimeQ(string val) {
-        //    DateTime? result = null;
-        //    // First, try to convert according to preferred format.
-        //    // If that fails, try a simple parse.
-        //    try {
-        //        result = DateTime.ParseExact((string)val, "yyyy-MM-dd HH:mm:ss", null);
-        //    } catch {
-        //        try {
-        //            result = DateTime.Parse((string)val);
-        //        } catch {
-        //        } // end try-catch
-        //    } // end try-catch
-        //    return result;
-        //} // end method
-
-
-
-        private void AddFromClause(IDbCommand cmd, IEnumerable<string> tableNames) {
-            var sql = new StringBuilder();
-            string lastTableName = null;
-            IList<string> lastPrimaryKeys = null;
-            foreach (var tableName in tableNames) {
-                var primaryKeys = DatabaseInfo.GetPrimaryKeys(tableName).ToList();
-                if (lastTableName != null)
-                    sql.Append(Environment.NewLine + "INNER JOIN ");
-                sql.Append(tableName);
-
-                if (lastTableName != null) {
-                    if (primaryKeys.Count != lastPrimaryKeys.Count || primaryKeys.Count == 0)
-                        throw new DataException("Primary keys must be defined for and match across " +
-                            "parent and child tables for objects with inherritance (parent table: " +
-                            lastTableName + " / child table: " + tableName + ").");
-
-                    sql.Append(Environment.NewLine + "ON ");
-                    if (primaryKeys.Count == 1)
-                        sql.Append(tableName + "." + primaryKeys.First() + " = " +
-                            lastTableName + "." + lastPrimaryKeys.First());
-                    else
-                        for (int pk = 0; pk < primaryKeys.Count; pk++) {
-                            if (primaryKeys[pk] != lastPrimaryKeys[pk])
-                                throw new DataException("Primary keys must exactly match across " +
-                                    "parent and child tables for objects with inherritance " +
-                                    "(parent table keys: " + string.Join(", ", primaryKeys) +
-                                    " / child table keys: " + string.Join(", ", lastPrimaryKeys) + ").");
-
-                            if (pk > 0)
-                                sql.Append(Environment.NewLine + "AND ");
-
-                            sql.Append(tableName + "." + primaryKeys[pk] + " = " +
-                                lastTableName + "." + lastPrimaryKeys[pk]);
-                        } // end for
-                } // end if
-
-                lastTableName = tableName;
-                lastPrimaryKeys = primaryKeys;
-            } // end foreach
-            cmd.CommandText += sql;
-        } // end method
-
-
-
-        /// <summary>
-        ///   Creates the ORDER BY clause of a SQL statement based on the
-        ///   tableNames and orderColumns specified.  The tableNames are
-        ///   used to prefix the columns.  The orderColumns parameter is
-        ///   an IDictionary where the column names are keys and the values
-        ///   indicate sorting order: 1 for ascending, -1 for descending
-        ///   (columns with 0 are ignored).
-        /// </summary>
-        /// <param name="tableNames"></param>
-        /// <param name="orderColumns"></param>
-        /// <returns></returns>
-        private void AddOrderByClause(IDbCommand cmd, IEnumerable<string> tableNames,
-            IDictionary<string, int> orderColumns) {
-            if (orderColumns == null)
-                return;
-
-            var columns = new List<string>();
-            foreach (var column in orderColumns.Keys) {
-                if (string.IsNullOrEmpty(column))
-                    continue;
-
-                var direction = orderColumns[column];
-                if (direction == 0)
-                    continue;
-
-                var table = GetTableForColumn(tableNames, column);
-                if (table != null) {
-                    columns.Add(table + '.' + column);
-                    if (direction < 0)
-                        columns.Add(" DESC");
-                } // end if
-            } // end foreach
-
-            if (columns.Any())
-                cmd.CommandText += Environment.NewLine + "ORDER BY " + string.Join(", ", columns);
-        } // end method
-
-
-
-        private void AddPagingClause<T>(IDbCommand cmd, string tableName, Cursor<T> cursor)
-            where T : new() {
-            if (cursor.limit == null && cursor.skip == null)
-                return;
-
-            cursor.pagingMechanism = DatabaseInfo.GetPagingMechanism(tableName);
-            if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.Programmatic)
-                return;
-
-            string pagingClause = null;
-            if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.LimitOffset) {
-                var parts = new List<string>(2);
-                if (cursor.limit != null)
-                    parts.Add("LIMIT " + cursor.limit);
-                if (cursor.skip != null)
-                    parts.Add("OFFSET " + cursor.skip);
-                pagingClause = string.Join(" ", parts);
-            } // end if
-
-            if (cursor.pagingMechanism == DatabaseInfo.PagingMechanism.OffsetFetchFirst) {
-                var parts = new List<string>(3);
-                if (cursor.sort == null || cursor.sort.Count == 0) {
-                    var firstColumn = DatabaseInfo.GetSchemaTable(tableName).Rows[0]["ColumnName"];
-                    parts.Add("ORDER BY " + tableName + "." + firstColumn);
-                } // end if
-                parts.Add("OFFSET " + (cursor.skip ?? 0) + " ROWS");
-                if (cursor.limit != null)
-                    parts.Add("FETCH FIRST " + cursor.limit + " ROWS ONLY");
-                pagingClause = string.Join(" ", parts);
-            } // end if
-
-            if (pagingClause != null)
-                cmd.CommandText += Environment.NewLine + pagingClause;
-        } // end method
-
-
-
-        private void AddSelectClause<T>(IDbCommand cmd, IEnumerable<string> tableNames, bool countOnly) {
-            var mirror = DatabaseInfo.GetMirror(typeof(T));
-            if (countOnly)
-                cmd.CommandText = "SELECT COUNT(*) FROM ";
-            else {
-                var sql = new StringBuilder("SELECT ");
-                bool isAfterFirst = false;
-                var valuesOnLineCount = 0;
-                foreach (var tableName in tableNames) {
-                    var schema = DatabaseInfo.GetSchemaTable(tableName);
-                    for (int i = 0; i < schema.Rows.Count; i++) {
-                        var column = (string)schema.Rows[i]["ColumnName"];
-                        var prop = mirror.GetProperty(column, CaseInsensitiveBinding);
-                        if (prop == null)
-                            continue;
-
-                        if (isAfterFirst) {
-                            sql.Append(',');
-                            if (valuesOnLineCount == 4) {
-                                sql.Append(Environment.NewLine);
-                                valuesOnLineCount = 0;
-                            } else
-                                sql.Append(' ');
-                        } // end if
-                        valuesOnLineCount++;
-                        sql.Append(tableName + '.' + column);
-                        isAfterFirst = true;
-                    } // end if
-                } // end foreach
-                sql.Append(Environment.NewLine + "FROM ");
-                cmd.CommandText = sql.ToString();
-            } // end if-else
-        } // end method
-
-
-
-        private void AddWhereClause(IDbCommand cmd, IEnumerable<string> tableNames,
-            IEnumerable<Criterion> criteria) {
-            if (criteria == null)
-                return;
-
-            var sql = new StringBuilder();
-            var whereAdded = false;
-            foreach (var criterion in criteria) {
-                var schemaRow = GetScehmaTableRow(tableNames, criterion.Name);
-                var table = GetTableForColumn(tableNames, criterion.Name);
-                sql.Append(Environment.NewLine);
-                sql.Append(whereAdded ? "AND " : "WHERE ");
-                if (schemaRow == null || table == null)
-                    sql.Append(criterion.Name.ToSqlString() + " = 'does not map to a column'");
-                else
-                    sql.Append(table + '.' + criterion.ToString(true, cmd, schemaRow));
-                whereAdded = true;
-            } // end foreach
-            cmd.CommandText += sql;
-        } // end method
-
-
-
         private void ApplySequenceId(object obj, string tableName) {
+            if (Sequencer == null)
+                return;
+
             PropertyInfo idProperty;
             var id = GetIntId(obj, out idProperty);
             if (id == null && idProperty != null) {
@@ -305,74 +66,11 @@ namespace XRepository {
 
 
         private object CastToTypedEnumerable(IEnumerable enumerable, Type type) {
-            var enumerableMirror = DatabaseInfo.GetMirror(typeof(Enumerable));
+            var enumerableMirror = mirrorCache[typeof(Enumerable)];
             var castMethod = enumerableMirror.GetMethod("Cast", new[] {typeof(IEnumerable)});
             castMethod = castMethod.MakeGenericMethod(new[] {type});
             return castMethod.Invoke(null, new object[] {enumerable});
         } // end method
-
-
-
-        private static void CheckForConnectionLeaks(int seconds) {
-            if (!Debugger.IsAttached)
-                return;
-
-            var nl = Environment.NewLine;
-            var now = DateTime.UtcNow;
-            foreach (var info in connectionInfoMap.Values)
-                if ((now - info.CreationDatetime).Seconds > seconds)
-                    throw new DataException("An unclosed database connection has been detected." + nl + nl +
-                        "This exception is likely due to either 1) a bug in NRepository, " +
-                        "2) an undisposed Transaction returned from BeginTransaction, or " +
-                        "3) a bug in a class that extends NRepository.  This exception " +
-                        "can only thrown when a Debugger is attached to the running process " +
-                        "(so it should not appear in a live application)." + nl + nl +
-                        "Information About the Unclosed Connection" + nl +
-                        "Creation Date / Time: " + info.CreationDatetime + nl +
-                        "SQL Command(s) Executed..." + nl +
-                        string.Join(Environment.NewLine, info.SqlLog) + nl +
-                        "NRepository.CreationStack..." + nl +
-                        info.RepositoryCreationStack);
-        } // end method
-
-
-
-        protected void CloseConnection() {
-            if (connection != null) {
-                connection.Dispose();
-                Log("Connection " + connectionId + " closed");
-                connectionInfoMap.TryRemove(connectionId);
-                CheckForConnectionLeaks(300);
-            } // end if
-
-            connection = null;
-            ConnectionInfo = null;
-            DatabaseInfo = null;
-        } // end method
-
-
-
-        protected IDbConnection Connection {
-            get {
-                if (connection == null) {
-                    CheckForConnectionLeaks(300);
-                    lock (nextConnectionIdLock)
-                        connectionId = nextConnectionId++;
-                    connection = openConnectionFunc();
-                    Log("Connection " + connectionId + " opened");
-                    ConnectionInfo = new ConnectionInfo();
-                    ConnectionInfo.Id = connectionId;
-                    ConnectionInfo.CreationDatetime = DateTime.UtcNow;
-                    ConnectionInfo.RepositoryCreationStack = CreationStack;
-                    connectionInfoMap.TryAdd(connectionId, ConnectionInfo);
-                } // end function
-                return connection;
-            } // end get
-        } // end property
-
-
-
-        protected ConnectionInfo ConnectionInfo { get; private set; }
 
 
 
@@ -387,7 +85,7 @@ namespace XRepository {
                 var tableNames = GetTableNames(typeof(T));
                 return Count(tableNames, criteria);
             } finally {
-                CloseConnection();
+                Executor.Dispose();
             } // end try-finally
         } // end method
 
@@ -396,7 +94,7 @@ namespace XRepository {
         public long Count<T>(object criteria) where T : new() {
             if (criteria == null || criteria.GetType().IsBasic()) try {
                 var type = typeof(T);
-                var idProperty = DatabaseInfo.GetIdProperty(type);
+                var idProperty = GetIdProperty(type);
                 if (idProperty == null) {
                     var value = "" + criteria;
                     if (type == typeof(string) || type == typeof(DateTime) || type == typeof(DateTime?))
@@ -409,7 +107,7 @@ namespace XRepository {
                 } // end if
                 return Count<T>(new Criterion(idProperty.Name, "=", criteria));
             } finally {
-                CloseConnection();
+                Executor.Dispose();
             } // end try-finally
 
             var criterion = criteria as Criterion;
@@ -432,13 +130,9 @@ namespace XRepository {
             try {
                 if (IsUsingLikeForEquals)
                     criteria = SwitchEqualsToLike(criteria);
-                var cursor = new Cursor<object>(criteria, Fetch, this);
-                using (var cmd = CreateSelectCommand(tableNames, cursor, true)) {
-                    var result = cmd.ExecuteScalar();
-                    return DataTool.AsLong(result) ?? 0;
-                } // end using
+                return Executor.Count(tableNames, criteria);
             } finally {
-                CloseConnection();
+                Executor.Dispose();
             } // end try-finally
         } // end method
 
@@ -450,8 +144,8 @@ namespace XRepository {
 
 
 
-        public static NRepository Create(Func<IDbConnection> openConnectionFunc) {
-            return new NRepository(openConnectionFunc);
+        public static NRepository Create(Func<IDbConnection> openConnection) {
+            return new NRepository(openConnection);
         } // end method
 
 
@@ -462,65 +156,23 @@ namespace XRepository {
 
 
 
-        private IDbCommand CreateDeleteCommand(string table, IEnumerable<Criterion> criteria) {
-            var cmd = Connection.CreateCommand();
-            try {
-                cmd.CommandText = "DELETE FROM " + table;
-                AddWhereClause(cmd, new[] {table}, criteria);
-                LogCommand(cmd);
-                return cmd;
-            } catch {
-                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
-                // and then let the exception bubble up the stack.
-                cmd.Dispose();
-                throw;
-            } // end try-catch
-        } // end method
-
-
-
-        private IDbCommand CreateInsertCommand(string table, IDictionary<string, object> values) {
-            var cmd = Connection.CreateCommand();
-            try {
-                var sql = new StringBuilder("INSERT INTO " + table + Environment.NewLine + "(");
-                var valueString = new StringBuilder();
-                bool isAfterFirst = false;
-                foreach (var column in values.Keys) {
-                    if (isAfterFirst) {
-                        sql.Append(", ");
-                        valueString.Append(", ");
-                    } // end if
-                    sql.Append(column);
-                    valueString.Append(cmd.FormatParameter(column));
-                    cmd.AddParameter(column, values[column],
-                        GetScehmaTableRow(new[] {table}, column));
-                    isAfterFirst = true;
-                } // end for
-
-                sql.Append(")" + Environment.NewLine + "VALUES" + Environment.NewLine + "(");
-                sql.Append(valueString.ToString());
-                sql.Append(')');
-
-                cmd.CommandText = sql.ToString();
-                LogCommand(cmd);
-                return cmd;
-            } catch {
-                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
-                // and then let the exception bubble up the stack.
-                cmd.Dispose();
-                throw;
-            } // end try-catch
+        protected IDictionary<string, object> CreateDatabaseRecord(object obj) {
+            var type = obj.GetType();
+            var tableNames = GetTableNames(type);
+            var record = GetValues(obj, tableNames);
+            record["_tableNames"] = tableNames;
+            return record;
         } // end method
 
 
 
         private object CreateLazyLoadEnumerable(Type type, Criterion criterion, object referencingObject) {
             var lazyLoadType = typeof(LazyLoadEnumerable<>);
-            var mirror = DatabaseInfo.GetMirror(lazyLoadType);
+            var mirror = mirrorCache[lazyLoadType];
             var lazyLoadGenericType = mirror.MakeGenericType(type);
             var instance = Activator.CreateInstance(lazyLoadGenericType);
 
-            mirror = DatabaseInfo.GetMirror(lazyLoadGenericType);
+            mirror = mirrorCache[lazyLoadGenericType];
             var property = mirror.GetProperty("Criterion");
             property.SetValue(instance, criterion, null);
 
@@ -535,31 +187,20 @@ namespace XRepository {
 
 
 
-        private T CreateObject<T>(IDataReader dr) where T : new() {
+        private T CreateObject<T>(IDictionary<string, object> record) where T : new() {
             T obj = new T();
             var type = typeof(T);
-            var typeMirror = DatabaseInfo.GetMirror(type);
-            var schema = dr.GetSchemaTable();
-            for (var i = 0; i < dr.FieldCount; i++) {
-                var name = (string)schema.Rows[i]["ColumnName"];
-                name = FormatColumnName(name);
-
-                var val = dr.GetValue(i);
-                var valType = val.GetType();
-
+            var typeMirror = mirrorCache[type];
+            foreach (var columnName in record.Keys) {
+                var name = FormatColumnName(columnName);
                 var prop = typeMirror.GetProperty(name, CaseInsensitiveBinding);
-
                 if (prop == null)
                     continue;
 
-                // DBNull objects are turned into "null" and all other values
-                // are converted to the PropertyType if the valType cannot be
-                // assigned to the PropertyType
-                if (val == DBNull.Value)
-                    val = null;
-                else {
-                    var propMirror = DatabaseInfo.GetMirror(prop.PropertyType);
-                    if (!propMirror.IsAssignableFrom(valType))
+                var val = record[columnName];
+                if (val != null) {
+                    var propMirror = mirrorCache[prop.PropertyType];
+                    if (!propMirror.IsAssignableFrom(val.GetType()))
                         val = SystemTool.SmartConvert(val, prop.PropertyType);
                 } // end if
 
@@ -570,30 +211,30 @@ namespace XRepository {
 
 
 
-        private IEnumerable<T> CreateObjects<T>(IDbCommand cmd, Cursor<T> cursor) where T : new() {
+        private IEnumerable<T> CreateObjects<T>(IEnumerable<IDictionary<string, object>> records,
+            CursorData cursorData) where T : new() {
             var objs = new List<T>();
             var recordNum = 0;
-            var recordStart = cursor.skip ?? 0;
-            var recordStop = cursor.limit != null ? recordStart + cursor.limit : null;
+            var recordStart = cursorData.skip ?? 0;
+            var recordStop = cursorData.limit != null ? recordStart + cursorData.limit : null;
 
-            using (var dr = cmd.ExecuteReader())
-            while (dr.Read()) {
+            foreach (var record in records) {
                 // Create objects if the pagingMechanism is not Programatic or
                 // (if it is) and recordNum is on or after recordStart and
                 // before recordStop.  recordStop is null if cursor.limit
                 // is null and in that case, use recordNum + 1 so that the record
                 // always results in CreateObject (since cursor.limit wasn't specified).
-                if (cursor.pagingMechanism != DatabaseInfo.PagingMechanism.Programmatic ||
+                if (cursorData.pagingMechanism != DatabaseExecutor.PagingMechanism.Programmatic ||
                     recordNum >= recordStart &&
                     recordNum < (recordStop ?? (recordNum + 1)))
-                    objs.Add(CreateObject<T>(dr));
+                    objs.Add(CreateObject<T>(record));
                     
                 recordNum++;
 
                 // Stop iterating if the pagingMechanism is null or Programmatic,
                 // recordStop is defined, and recordNum is on or after recordStop.
-                if ((cursor.pagingMechanism == null ||
-                    cursor.pagingMechanism == DatabaseInfo.PagingMechanism.Programmatic) &&
+                if ((cursorData.pagingMechanism == null ||
+                    cursorData.pagingMechanism == DatabaseExecutor.PagingMechanism.Programmatic) &&
                     recordStop != null && recordNum >= recordStop)
                     break;
             } // end while
@@ -602,58 +243,53 @@ namespace XRepository {
 
 
 
-        private IDbCommand CreateSelectCommand<T>(IEnumerable<string> tableNames, Cursor<T> cursor, bool countOnly)
-            where T : new() {
-            var cmd = Connection.CreateCommand();
-            try {
-                AddSelectClause<T>(cmd, tableNames, countOnly);
-                AddFromClause(cmd, tableNames);
-                AddWhereClause(cmd, tableNames, cursor.criteria);
-                AddOrderByClause(cmd, tableNames, cursor.sort);
-                AddPagingClause(cmd, tableNames.FirstOrDefault(), cursor);
-                LogCommand(cmd);
-                return cmd;
-            } catch {
-                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
-                // and then let the exception bubble up the stack.
-                cmd.Dispose();
-                throw;
-            } // end try-catch
-        } // end method
+        private Reference CreateReference(PropertyInfo property) {
+            // If a property is an Array, if it is "basic", or if
+            // it's ready only, then it can't be a reference property.
+            if (property.PropertyType.IsArray ||
+                property.PropertyType.IsBasic() ||
+                property.GetSetMethod() == null)
+                return null;
 
+            string prefix;
+            Type referencedType, primaryType, foreignType;
+            var isMany = true;
+            if (property.PropertyType.IsGenericType &&
+                property.PropertyType.GetGenericTypeDefinition() == typeof(IEnumerable<>)) {
+                referencedType = property.PropertyType.GetGenericArguments()[0];
+                if (referencedType.IsBasic())
+                    return null;
 
+                primaryType = property.DeclaringType;
+                foreignType = referencedType;
+                prefix = primaryType.Name;
+            } else {
+                isMany = false;
+                referencedType = property.PropertyType;
+                primaryType = property.PropertyType;
+                foreignType = property.DeclaringType;
+                prefix = property.Name;
+            } // end if
 
-        private IDbCommand CreateUpdateCommand(string table,
-            IDictionary<string, object> values, IEnumerable<Criterion> criteria) {
+            // Validate the referencedType and make sure that at least
+            // one of the tableNames (if it has any) has a SchemaTable
+            // demonstrating that it one or more database tables.
+            var tableNames = GetTableNames(referencedType);
+            if (!tableNames.Any())
+                return null;
+            //if (tableNames.All(tn => GetSchemaTable(tn) == null))
+            //    return null;
 
-            var cmd = Connection.CreateCommand();
-            try {
-                var sql = new StringBuilder("UPDATE " + table + " SET" + Environment.NewLine);
+            var keyProperty = FindReferenceKeyProperty(prefix, primaryType, foreignType);
+            if (keyProperty == null)
+                return null;
 
-                var primaryKeyColumns = criteria.Select(c => c.Name.ToUpper());
-                bool isAfterFirst = false;
-                foreach (string column in values.Keys) {
-                    if (primaryKeyColumns.Contains(column.ToUpper()))
-                        continue;
-
-                    if (isAfterFirst)
-                        sql.Append("," + Environment.NewLine);
-                    sql.Append(column + " = " + cmd.FormatParameter(column));
-                    cmd.AddParameter(column, values[column],
-                        GetScehmaTableRow(new[] { table }, column));
-                    isAfterFirst = true;
-                } // end foreach
-                cmd.CommandText = sql.ToString();
-                AddWhereClause(cmd, new[] { table }, criteria);
-
-                LogCommand(cmd);
-                return cmd;
-            } catch {
-                // If any exceptions occur, Dispose cmd (since its IDisposable and all)
-                // and then let the exception bubble up the stack.
-                cmd.Dispose();
-                throw;
-            } // end try-catch
+            var reference = new Reference();
+            reference.IsMany = isMany;
+            reference.KeyProperty = keyProperty;
+            reference.ValueProperty = property;
+            reference.ReferencedType = referencedType;
+            return reference;
         } // end method
 
 
@@ -662,24 +298,20 @@ namespace XRepository {
 
 
 
-        private DatabaseInfo databaseInfo;
-        protected DatabaseInfo DatabaseInfo {
+        private IExecutor executor;
+        protected IExecutor Executor {
             get {
-                if (databaseInfo == null)
-                    databaseInfo = new DatabaseInfo(Connection, s => Log(s));
-                return databaseInfo;
+                if (executor == null) {
+                    var dbExec = new DatabaseExecutor(openConnectionFunc);
+                    dbExec.RepositoryCreationStack = CreationStack;
+                    executor = dbExec;
+                } // end if
+                return executor;
             } // end get
             private set {
-                databaseInfo = value;
+                executor = value;
             } // end set
         } // property
-
-
-
-        private static void DefaultLog(string msg) {
-            if (Debugger.IsAttached)
-                Debug.WriteLine("[" + typeof(NRepository).FullName + "] " + msg);
-        } // end method
 
 
 
@@ -700,12 +332,15 @@ namespace XRepository {
                 if (wasNull)
                     idObjectMap = new Dictionary<Type, IDictionary<object, object>>();
 
+                if (IsUsingLikeForEquals)
+                    cursor.CursorData.criteria = SwitchEqualsToLike(cursor.CursorData.criteria);
+
                 IEnumerable<T> objs;
                 var tableNames = GetTableNames(typeof(T));
-                if (IsUsingLikeForEquals)
-                    cursor.criteria = SwitchEqualsToLike(cursor.criteria);
-                using (var cmd = CreateSelectCommand(tableNames, cursor, false))
-                    objs = CreateObjects<T>(cmd, cursor);
+                var objects = new BlockingCollection<IDictionary<string, object>>();
+                Executor.Fetch(tableNames, cursor.CursorData, objects);
+                objs = CreateObjects<T>(objects, cursor.CursorData);
+
                 foreach (var obj in objs) {
                     var id = GetId(obj);
                     if (id != null)
@@ -722,7 +357,7 @@ namespace XRepository {
 
                 return objs;
             } finally {
-                CloseConnection();
+                Executor.Dispose();
             } // end try-finally
         } // end method
 
@@ -743,7 +378,7 @@ namespace XRepository {
         public Cursor<T> Find<T>(object criteria) where T : new() {
             if (criteria == null || criteria.GetType().IsBasic()) try {
                 var type = typeof(T);
-                var idProperty = DatabaseInfo.GetIdProperty(type);
+                var idProperty = GetIdProperty(type);
                 if (idProperty == null) {
                     var value = "" + criteria;
                     if (type == typeof(string) || type == typeof(DateTime) || type == typeof(DateTime?))
@@ -756,7 +391,7 @@ namespace XRepository {
                 } // end if
                 return Find<T>(new Criterion(idProperty.Name, "=", criteria));
             } finally {
-                CloseConnection();
+                Executor.Dispose();
             } // end try-finally
 
             var criterion = criteria as Criterion;
@@ -771,6 +406,17 @@ namespace XRepository {
 
         public Cursor<T> Find<T>(params Criterion[] criteria) where T : new() {
             return Find<T>((IEnumerable<Criterion>)criteria);
+        } // end method
+
+
+
+        private PropertyInfo FindIdProperty(Type type) {
+            var keys = GetPrimaryKeys(type);
+            if (keys.Count() != 1)
+                return null;
+
+            var mirror = mirrorCache[type];
+            return mirror.GetProperty(keys.FirstOrDefault(), CaseInsensitiveBinding);
         } // end method
 
 
@@ -823,7 +469,7 @@ namespace XRepository {
             } // end if
 
             foreach (var type in idsToFind.Keys) {
-                var idProperty = DatabaseInfo.GetIdProperty(type);
+                var idProperty = GetIdProperty(type);
                 if (idProperty == null)
                     continue;
 
@@ -834,8 +480,60 @@ namespace XRepository {
             } // end foreach
         } // end method
 
-        
-        
+
+
+        private PropertyInfo FindReferenceKeyProperty(string prefix, Type primaryType, Type foreignType) {
+            var keys = GetPrimaryKeys(primaryType);
+            if (keys.Count() != 1)
+                return null;
+
+            var tableNames = GetTableNames(primaryType);
+            var keyName = keys.First();
+            foreach (var name in tableNames)
+                keyName = keyName.RemoveIgnoreCase(name); // TODO: Make this case-insensitive
+            keyName = prefix + keyName;
+
+            var mirror = mirrorCache[foreignType];
+            var keyProp = mirror.GetProperty(keyName, CaseInsensitiveBinding);
+            if (keyProp == null) {
+                keyName = keys.First();
+                keys = GetPrimaryKeys(foreignType);
+                if (!(keys.Count() == 1 && keys.First().Is(keyName)))
+                    keyProp = mirror.GetProperty(keyName, CaseInsensitiveBinding);
+            } // end if
+            return keyProp;
+        } // end method
+
+
+
+        private IEnumerable<Reference> FindReferences(Type type) {
+            var references = new List<Reference>();
+            var mirror = mirrorCache[type];
+            var properties = mirror.GetProperties();
+            foreach (var property in properties) {
+                var reference = CreateReference(property);
+                if (reference != null)
+                    references.Add(reference);
+            } // end foreach
+            return references;
+        } // end method
+
+
+
+        private IEnumerable<string> FindTableNames(Type type) {
+            var tableNameList = new List<string>();
+            while (type != typeof(object)) {
+                var tableDef = Executor.GetTableDefinition(type.Name);
+                if (tableDef != null)
+                    tableNameList.Add(tableDef.FullName);
+                type = type.BaseType;
+            } // end while
+            tableNameList.Reverse();
+            return tableNameList;
+        } // end method
+
+
+
         private static string FormatColumnName(string name) {
             // Extract the name from the reader's schema.  Fields with
             // the same name in multiple tables selected (usually the
@@ -851,25 +549,6 @@ namespace XRepository {
 
 
 
-        private string FormatLogMessage(IDbCommand cmd) {
-            var msg = new StringBuilder(cmd.CommandText);
-            if (cmd.Parameters.Count == 0)
-                return msg.ToString();
-
-            msg.Append(Environment.NewLine);
-            var isAfterFirst = false;
-            foreach (IDbDataParameter parameter in cmd.Parameters) {
-                if (isAfterFirst)
-                    msg.Append(", ");
-
-                msg.Append('@' + parameter.ParameterName + " = " + parameter.Value.ToSqlString());
-                isAfterFirst = true;
-            } // end foreach
-            return msg.ToString();
-        } // end method
-
-
-
         private object GetId(object obj) {
             PropertyInfo idProperty;
             return GetId(obj, out idProperty);
@@ -878,10 +557,20 @@ namespace XRepository {
 
 
         private object GetId(object obj, out PropertyInfo idProperty) {
-            idProperty = DatabaseInfo.GetIdProperty(obj.GetType());
+            idProperty = GetIdProperty(obj.GetType());
             if (idProperty == null)
                 return null;
             return idProperty.GetValue(obj, null);
+        } // end method
+
+
+
+        public PropertyInfo GetIdProperty(Type type) {
+            if (type == null)
+                throw new ArgumentNullException("type", "The type parameter was null.");
+
+            var info = infoCache[CreationStack];
+            return info.idPropertyCache.GetValue(type, FindIdProperty);
         } // end method
 
 
@@ -902,72 +591,35 @@ namespace XRepository {
 
 
 
-        private IDbCommand GetMappedCommand(IDictionary<Type, IDictionary<string, IDbCommand>> commandMap,
-            Type type, string tableName, IDictionary<string, object> values, Func<IDbCommand> createCmdFunc) {
-            IDbCommand cmd;
-            if (commandMap[type].ContainsKey(tableName)) {
-                cmd = commandMap[type][tableName];
-                foreach (IDbDataParameter parameter in cmd.Parameters)
-                    parameter.Set(values[parameter.ParameterName]);
+        public IEnumerable<string> GetPrimaryKeys(Type type) {
+            if (type == null)
+                throw new ArgumentNullException("type", "The type parameter was null.");
 
-                // Only explicity log here (when the command exists after parameters
-                // are set) because createCmdFunc already logs the command.
-                LogCommand(cmd);
-            } else {
-                cmd = createCmdFunc();
-                cmd.Prepare();
-                commandMap[type][tableName] = cmd;
-            } // end if-else
-            return cmd;
+            var tableNames = GetTableNames(type);
+            if (tableNames.Any())
+                return Executor.GetPrimaryKeys(tableNames.Last());
+            else
+                return new string[0];
         } // end method
 
 
 
-        private IEnumerable<Criterion> GetPrimaryKeyCriteria(object obj, string tableName) {
-            var type = obj.GetType();
-            var mirror = DatabaseInfo.GetMirror(type);
-            var primaryKeys = DatabaseInfo.GetPrimaryKeys(tableName);
-            var properties = new List<PropertyInfo>();
-            var criteriaMap = new Dictionary<string, object>();
-            foreach (var key in primaryKeys) {
-                var property = mirror.GetProperty(key, CaseInsensitiveBinding);
-                if (property == null)
-                    throw new MissingPrimaryKeyException("The object passed does " +
-                        "not specify all the primary keys for " + tableName +
-                        " (expected missing key: " + key + ").");
-                criteriaMap[key] = property.GetValue(obj, null);
-            } // end foreach
-            return Criterion.Create(criteriaMap);
+        internal IEnumerable<Reference> GetReferences(Type type) {
+            if (type == null)
+                throw new ArgumentNullException("type", "The type parameter was null.");
+
+            var info = infoCache[CreationStack];
+            return info.referencesCache.GetValue(type, FindReferences);
         } // end method
 
 
 
-        private DataRow GetScehmaTableRow(IEnumerable<string> tableNames, string column) {
-            foreach (string tableName in tableNames) {
-                var schema = DatabaseInfo.GetSchemaTable(tableName);
-                for (int r = 0; r < schema.Rows.Count; r++)
-                    if (column.Is(schema.Rows[r]["ColumnName"] as string))
-                        return schema.Rows[r];
-            } // end for
-            return null;
-        } // end method
+        public IEnumerable<string> GetTableNames(Type type) {
+            if (type == null)
+                throw new ArgumentNullException("type", "The type parameter was null.");
 
-
-
-        private string GetTableForColumn(IEnumerable<string> tableNames, string column) {
-            foreach (string tableName in tableNames) {
-                var schema = DatabaseInfo.GetSchemaTable(tableName);
-                for (int r = 0; r < schema.Rows.Count; r++)
-                    if (column.Is(schema.Rows[r]["ColumnName"] as string))
-                        return tableName;
-            } // end for
-            return null;
-        } // end method
-
-
-
-        private IEnumerable<string> GetTableNames(Type type) {
-            var tableNames = DatabaseInfo.GetTableNames(type);
+            var info = infoCache[CreationStack];
+            var tableNames = info.tableNamesCache.GetValue(type, FindTableNames);
             if (!tableNames.Any())
                 throw new DataException("There are no tables associated with \"" + type.FullName + "\".");
             return tableNames;
@@ -975,20 +627,20 @@ namespace XRepository {
 
 
 
-        private IDictionary<string, object> GetValues(object obj, string tableName) {
-            var values = new Dictionary<string, object>();
-            var schema = DatabaseInfo.GetSchemaTable(tableName);
-            if (schema == null)
-                return values;
+        private IDictionary<string, object> GetValues(object obj, IEnumerable<string> tableNames) {
+            var mirror = mirrorCache[obj.GetType()];
+            var values = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            foreach (var tableName in tableNames) {
+                var columns = Executor.GetColumns(tableName);
+                foreach (var column in columns) {
+                    if (values.ContainsKey(column))
+                        continue;
 
-            var mirror = DatabaseInfo.GetMirror(obj.GetType());
-            for (int i = 0; i < schema.Rows.Count; i++) {
-                var key = (string)schema.Rows[i]["ColumnName"];
-                var prop = mirror.GetProperty(key, CaseInsensitiveBinding);
-                if (prop != null)
-                    values[key] = prop.GetValue(obj, null);
-            } // end if
-
+                    var prop = mirror.GetProperty(column, CaseInsensitiveBinding);
+                    if (prop != null)
+                        values[column] = prop.GetValue(obj, null);
+                } // end for
+            } // end foreach
             return values;
         } // end method
 
@@ -1019,25 +671,22 @@ namespace XRepository {
 
         public bool IsUsingLikeForEquals { get; set; }
 
-        
-        
-        private Action<string> log;
+
+
         public Action<string> Log {
             get {
-                return log ?? DefaultLog;
+                var dbExec = Executor as DatabaseExecutor;
+                if (dbExec == null)
+                    return null;
+
+                return dbExec.Log;
             } // end get
             set {
-                log = value;
+                var dbExec = Executor as DatabaseExecutor;
+                if (dbExec != null && value != null)
+                    dbExec.Log = value;
             } // end set
         } // end property
-
-
-
-        protected void LogCommand(IDbCommand cmd) {
-            var msg = FormatLogMessage(cmd);
-            Log(msg);
-            ConnectionInfo.SqlLog.Add(msg);
-        } // end method
 
 
 
@@ -1045,7 +694,7 @@ namespace XRepository {
             params IDictionary<Type, IDictionary<object, object>>[] maps) {
             var type = obj.GetType();
             while (type != typeof(object)) {
-                if (DatabaseInfo.GetTableDefinition(type.Name) != null)
+                if (Executor.GetTableDefinition(type.Name) != null)
                     foreach (var map in maps) {
                         if (!map.ContainsKey(type))
                             map[type] = new Dictionary<object, object>();
@@ -1064,7 +713,7 @@ namespace XRepository {
 
 
         private object ReflectedFind(Type type, object criteria) {
-            var mirror = DatabaseInfo.GetMirror(GetType());
+            var mirror = mirrorCache[GetType()];
             var method = mirror.GetMethod("Find", new[] {typeof(object)});
             method = method.MakeGenericMethod(type);
             return method.Invoke(this, new[] {criteria});
@@ -1082,44 +731,13 @@ namespace XRepository {
 
 
         private void RemoveRange(IEnumerable enumerable) {
-            // Used for storing prepared statements to be used repeatedly
-            var cmdMap = new Dictionary<Type, IDictionary<string, IDbCommand>>();
             try {
-                // For each object and for each of that objects associate tables,
-                // use the object's primary keys as parameters for a delete query.
-                // Commands created for first Type / tableName combination are
-                // prepared (compiled) and then stored in cmdMap to be used again
-                // for other objects.
-                foreach (var obj in enumerable) {
-                    var type = obj.GetType();
-                    if (!cmdMap.ContainsKey(type))
-                        cmdMap[type] = new Dictionary<string, IDbCommand>();
-
-                    var tableNames = GetTableNames(type);
-                    foreach (var tableName in tableNames) {
-                        var criteria = GetPrimaryKeyCriteria(obj, tableName);
-
-                        // If the keys criteria has a null value, then the operator will be
-                        // "IS" or "IS NOT" instead of "=" or "<>" making the query usable only
-                        // once.  In that case, simply create the cmd, run it, and dispose it.
-                        // Otherwise, use the cmdMap.  If the cmd required doesn't exist
-                        // in the cmdMap, create it, prepare it, and add it.  If the cmd
-                        // does exist, change the parameters to the object's keys.
-                        if (criteria.HasNullValue())
-                            using (var cmd = CreateDeleteCommand(tableName, criteria))
-                                cmd.ExecuteNonQuery();
-                        else {
-                            var cmd = GetMappedCommand(cmdMap, type, tableName, criteria.ToDictionary(),
-                                () => { return CreateDeleteCommand(tableName, criteria); });
-                            cmd.ExecuteNonQuery();
-                        } // end if-else
-                    } // end foreach
-                } // end foreach
+                var records = new BlockingCollection<IDictionary<string, object>>();
+                foreach (var obj in enumerable)
+                    records.Add(CreateDatabaseRecord(obj));
+                Executor.Remove(records);
             } finally {
-                foreach (var subMap in cmdMap.Values)
-                    foreach (var cmd in subMap.Values)
-                        cmd.Dispose();
-                CloseConnection();
+                Executor.Dispose();
             } // end try-finally
         } // end method
 
@@ -1135,86 +753,35 @@ namespace XRepository {
 
 
         private void SaveRange(IEnumerable enumerable) {
-            // Used for storing prepared statements to be used repeatedly
-            var countCmdMap = new Dictionary<Type, IDictionary<string, IDbCommand>>();
-            var insertCmdMap = new Dictionary<Type, IDictionary<string, IDbCommand>>();
-            var updateCmdMap = new Dictionary<Type, IDictionary<string, IDbCommand>>();
             try {
+                var records = new BlockingCollection<IDictionary<string, object>>();
                 foreach (var obj in enumerable) {
-                    var type = obj.GetType();
-                    if (!countCmdMap.ContainsKey(type))
-                        countCmdMap[type] = new Dictionary<string, IDbCommand>();
-                    if (!insertCmdMap.ContainsKey(type))
-                        insertCmdMap[type] = new Dictionary<string, IDbCommand>();
-                    if (!updateCmdMap.ContainsKey(type))
-                        updateCmdMap[type] = new Dictionary<string, IDbCommand>();
-
-                    var tableNames = GetTableNames(type);
-                    foreach (var tableName in tableNames) {
-                        ApplySequenceId(obj, tableName);
-                        var criteria = GetPrimaryKeyCriteria(obj, tableName);
-                        var values = GetValues(obj, tableName);
-
-                        var criteriaAndValues = new Dictionary<string, object>(values);
-                        criteriaAndValues.AddRange(criteria.ToDictionary());
-
-                        // If the keys criteria has a null value, then the operator will be
-                        // "IS" or "IS NOT" instead of "=" or "<>" making the query usable only
-                        // once.  In that case, simply create the cmd, run it, and dispose it.
-                        // Otherwise, use the cmdMap.  If the cmd required doesn't exist
-                        // in the cmdMap, create it, prepare it, and add it.  If the cmd
-                        // does exist, change the parameters to the object's keys.
-                        object result;
-                        long? count;
-                        if (criteria.HasNullValue()) {
-                            var cursor = new Cursor<object>(criteria, Fetch, this);
-                            using (var cmd = CreateSelectCommand(tableNames, cursor, true))
-                                result = cmd.ExecuteScalar();
-                            count = DataTool.AsLong(result) ?? 0;
-                            using (var cmd = count == 0 ?
-                                CreateInsertCommand(tableName, values) :
-                                CreateUpdateCommand(tableName, values, criteria))
-                                cmd.ExecuteNonQuery();
-                        } else {
-                            var cursor = new Cursor<object>(criteria, Fetch, this);
-                            IDbCommand cmd = GetMappedCommand(countCmdMap, type, tableName, criteria.ToDictionary(),
-                                () => { return CreateSelectCommand(tableNames, cursor, true); });
-                            result = cmd.ExecuteScalar();
-                            count = DataTool.AsLong(result) ?? 0;
-
-                            if (count == 0)
-                                cmd = GetMappedCommand(insertCmdMap, type, tableName, criteriaAndValues,
-                                    () => { return CreateInsertCommand(tableName, values); });
-                            else
-                                cmd = GetMappedCommand(updateCmdMap, type, tableName, criteriaAndValues,
-                                    () => { return CreateUpdateCommand(tableName, values, criteria); });
-                            cmd.ExecuteNonQuery();
-                        } // end if-else
-
-                    } // end foreach
+                    var tableNames = GetTableNames(obj.GetType());
+                    ApplySequenceId(obj, tableNames.First());
+                    records.Add(CreateDatabaseRecord(obj));
                 } // end foreach
+                Executor.Save(records);
             } finally {
-                DisposeMappedCommands(countCmdMap);
-                DisposeMappedCommands(insertCmdMap);
-                DisposeMappedCommands(updateCmdMap);
-                CloseConnection();
+                Executor.Dispose();
             } // end try-finally
         } // end method
 
 
 
-        private Sequencer sequencer;
         public Sequencer Sequencer {
             get {
-                if (sequencer == null) {
-                    if (DatabaseInfo.Sequencer == null)
-                        DatabaseInfo.Sequencer = new Sequencer(openConnectionFunc);
-                    sequencer = DatabaseInfo.Sequencer;
-                } // end if
-                return sequencer;
+                var dbExec = Executor as DatabaseExecutor;
+                if (dbExec == null)
+                    return null;
+
+                if (dbExec.Sequencer == null)
+                    dbExec.Sequencer = new Sequencer(openConnectionFunc);
+                return dbExec.Sequencer;
             } // end get
             set {
-                sequencer = value;
+                var dbExec = Executor as DatabaseExecutor;
+                if (dbExec != null && value != null)
+                    dbExec.Sequencer = value;
             } // end set
         } // end property
 
@@ -1276,7 +843,7 @@ namespace XRepository {
 
         private void SetReferences(IEnumerable objs) {
             var type = objs.GetType().GetGenericArguments()[0];
-            var references = DatabaseInfo.GetReferences(type);
+            var references = GetReferences(type);
             SetManyReferences(objs, references);
             FindReferenceIds(objs, references);
             SetOneReferences(objs, references);

@@ -23,5 +23,5 @@ namespace XRepository {
         void Remove(object obj);
 
         void Save(object obj);
-    }
-}
+    } // end interface
+} // end namespace

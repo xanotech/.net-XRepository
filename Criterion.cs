@@ -116,7 +116,7 @@ namespace XRepository {
             if (criteriaObj == null)
                 return null;
 
-            var criteriaMap = new Dictionary<string, object>();
+            var criteriaMap = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             var criteriaType = criteriaObj.GetType();
             var criteriaMirror = mirrorCache[criteriaType];
             foreach (var prop in criteriaMirror.GetProperties()) {

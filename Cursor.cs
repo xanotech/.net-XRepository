@@ -6,10 +6,6 @@ using XTools;
 namespace XRepository {
     public class Cursor<T> : IEnumerable<T> where T : new() {
 
-        // Used by the spawning repository for populating data.
-        internal IEnumerable<Criterion> criteria;
-        internal DatabaseInfo.PagingMechanism? pagingMechanism;
-
         // data and fetch are closely related.  data is essentially initialized
         // the the results of fetch whenever results need to be pulled.
         private IList<T> data;
@@ -19,12 +15,6 @@ namespace XRepository {
 
         private IEnumerable[] joinObjects; // Passed to fetch, received from Join method.
 
-        // The following values hold the underlying values for
-        // the limit, skip, and sort methods / properties.
-        private long? limitValue;
-        private long? skipValue;
-        private IDictionary<string, int> sortValue;
-
 
 
         internal Cursor(IEnumerable<Criterion> criteria,
@@ -33,7 +23,7 @@ namespace XRepository {
             if (fetchFunc == null)
                 throw new ArgumentNullException("fetchFunc", "The fetchFunc parameter is null.");
 
-            this.criteria = criteria;
+            CursorData.criteria = criteria;
             this.fetch = fetchFunc;
             this.repository = repository;
         } // end constructor
@@ -45,8 +35,17 @@ namespace XRepository {
                 data = data ?? new List<T>(fetch(this, joinObjects));
                 return data.Count;
             } else
-                return repository.Count<T>(criteria);
+                return repository.Count<T>(cursorData.criteria);
         } // end method
+
+
+
+        private CursorData cursorData;
+        internal CursorData CursorData {
+            get {
+                return cursorData = cursorData ?? new CursorData();
+            } // end get
+        } // end property
 
 
 
@@ -72,7 +71,7 @@ namespace XRepository {
         
 
         public long? limit {
-            get { return limitValue; }
+            get { return CursorData.limit; }
             set { Limit(value); }
         } // end property
 
@@ -80,7 +79,7 @@ namespace XRepository {
 
         public Cursor<T> Limit(long? rows) {
             data = null;
-            limitValue = rows;
+            CursorData.limit = rows;
             return this;
         } // end method
 
@@ -93,7 +92,7 @@ namespace XRepository {
 
 
         public long? skip {
-            get { return skipValue; }
+            get { return CursorData.skip; }
             set { Skip(value); }
         } // end property
 
@@ -101,14 +100,14 @@ namespace XRepository {
 
         public Cursor<T> Skip(long? rows) {
             data = null;
-            skipValue = rows;
+            CursorData.skip = rows;
             return this;
         } // end method
 
 
 
         public IDictionary<string, int> sort {
-            get { return sortValue; }
+            get { return CursorData.sort; }
             set { Sort(value); }
         } // end property
 
@@ -116,14 +115,14 @@ namespace XRepository {
 
         public Cursor<T> Sort(IDictionary<string, int> sortBy) {
             data = null;
-            sortValue = sortBy;
+            CursorData.sort = sortBy;
             return this;
         } // end method
 
 
 
         public Cursor<T> Sort(IEnumerable<string> sortBy) {
-            var sortByDictionary = new Dictionary<string, int>();
+            var sortByDictionary = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var column in sortBy)
                 sortByDictionary[column] = 1;
             return Sort(sortByDictionary);

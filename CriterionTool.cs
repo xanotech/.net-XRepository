@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace XRepository {
     public static class CriterionTool {
@@ -22,7 +23,7 @@ namespace XRepository {
 
 
         public static IDictionary<string, object> ToDictionary(this IEnumerable<Criterion> criteria) {
-            var map = new Dictionary<string, object>();
+            var map = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             foreach (var criterion in criteria)
                 map[criterion.Name] = criterion.Value;
             return map;

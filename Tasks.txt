@@ -1,15 +1,19 @@
 o Create RepositoryController and JSRepository.js
     - Split out query logic common to both NRepository and RepositoryController
+o Allow Cursor.sort to also allow IDictionary<string, bool> for NRepository
+o Make sort value of 0 simply not sort
 o Implement Security for NRepository and JSRepository
 o Figure out how to make Categorized Lookup Tables work with References
 o Move client-server databases to another computer
 o Setup and test databases...
     - Sybase
     - Teradata
-o Implement Producer / Consumer for Reads
+o Implement Producer / Consumer for reads and writes
 o Test DatabaseRepository
     - Test Improved Reference Initialization (use large random set of test data)
+o Allow sort to use IDictionary of <string, bool> (both NRepo and JSRepo)
 o Implement Mapping functionality for NRepository and JSRepository
+o See if its possible to specify columns instead of using SELECT *
 o Implement Transaction capability to NRepository and JSRepository
 o Change BackgroundTaskQueue to use BlockingCollection
 o Create a generic UserController based on wheresmylinks user code

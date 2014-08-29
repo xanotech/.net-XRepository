@@ -33,6 +33,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\Test\packages\Newtonsoft.Json.6.0.4\lib\net40\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="Microsoft.CSharp" />
@@ -58,10 +61,14 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConnectionInfo.cs" />
+    <Compile Include="TypeInfoCache.cs" />
+    <Compile Include="DatabaseExecutor.cs" />
+    <Compile Include="TableDefinition.cs" />
+    <Compile Include="IExecutor.cs" />
+    <Compile Include="CursorData.cs" />
     <Compile Include="CriterionTool.cs" />
     <Compile Include="DatabaseInfoCache.cs" />
     <Compile Include="NRepository.cs" />
-    <Compile Include="DatabaseInfo.cs" />
     <Compile Include="IRepository.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Criterion.cs" />
@@ -80,6 +87,7 @@
   <ItemGroup>
     <None Include=".gitignore" />
     <Compile Include="Cursor.cs" />
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Tasks.txt" />
