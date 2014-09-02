@@ -1,5 +1,5 @@
-o Create RepositoryController and JSRepository.js
-    - Split out query logic common to both NRepository and RepositoryController
+o Implement async JSRepository
+o Have getXyz functions (createdy by MapXyzReference) return objects that reference the original object
 o Allow Cursor.sort to also allow IDictionary<string, bool> for NRepository
 o Make sort value of 0 simply not sort
 o Implement Security for NRepository and JSRepository

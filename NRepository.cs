@@ -490,7 +490,7 @@ namespace XRepository {
             var tableNames = GetTableNames(primaryType);
             var keyName = keys.First();
             foreach (var name in tableNames)
-                keyName = keyName.RemoveIgnoreCase(name); // TODO: Make this case-insensitive
+                keyName = keyName.RemoveIgnoreCase(name);
             keyName = prefix + keyName;
 
             var mirror = mirrorCache[foreignType];
