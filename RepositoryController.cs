@@ -42,8 +42,11 @@ namespace XRepository {
 
 
 
-        public JsonResult Count() {
-            return null;
+        public JsonResult Count(string tableNames, string cursor) {
+            var tableNamesEnum = ParseTableNames(tableNames);
+            var cursorData = JsonConvert.DeserializeObject<CursorData>(cursor);
+            var count = Executor.Count(tableNamesEnum, cursorData.criteria);
+            return Json(count, JsonRequestBehavior.AllowGet);
         } // end method
 
 
@@ -97,30 +100,12 @@ namespace XRepository {
 
 
         public ActionResult Fetch(string tableNames, string cursor) {
-            var tableNamesList = new List<string>();
-            if (string.IsNullOrEmpty(tableNames))
-                throw new ArgumentNullException("tableNames", "The tableNames parameter is null.");
-            var jTok = JToken.Parse(tableNames);
-            if (jTok.Type == JTokenType.String)
-                tableNamesList.Add(jTok.Value<string>());
-            else if (jTok.Type == JTokenType.Array)
-                foreach (JToken tableNameElement in jTok) {
-                    if (tableNameElement.Type != JTokenType.String)
-                        throw new FormatException("The tableNames parameter contained an " +
-                            "element that was not a string (json = " + jTok.ToString() + ").");
-                    var tableName = tableNameElement.Value<string>();
-                    var tableDef = Executor.GetTableDefinition(tableName);
-                    if (tableDef == null)
-                        throw new DataException("The table \"" + tableName + "\" is not a valid table.");
-                    tableNamesList.Add(tableDef.FullName);
-                } // end foreach
-            else
-                return null;
+            var tableNamesEnum = ParseTableNames(tableNames);
             var cursorData = JsonConvert.DeserializeObject<CursorData>(cursor);
 
             var objectValuesList = new List<IDictionary<string, object>>();
             var objects = new BlockingCollection<IDictionary<string, object>>();
-            Executor.Fetch(tableNamesList, cursorData, objects);
+            Executor.Fetch(tableNamesEnum, cursorData, objects);
             FixDates(objects);
             return Json(objects, JsonRequestBehavior.AllowGet);
         } // end method
@@ -210,6 +195,31 @@ namespace XRepository {
             } // end foreach
 
             return values;
+        } // end method
+
+
+
+        private IEnumerable<string> ParseTableNames(string tableNames) {
+            var tableNamesList = new List<string>();
+            if (string.IsNullOrEmpty(tableNames))
+                throw new ArgumentNullException("tableNames", "The tableNames parameter is null.");
+            var jTok = JToken.Parse(tableNames);
+            if (jTok.Type == JTokenType.String)
+                tableNamesList.Add(jTok.Value<string>());
+            else if (jTok.Type == JTokenType.Array)
+                foreach (JToken tableNameElement in jTok) {
+                    if (tableNameElement.Type != JTokenType.String)
+                        throw new FormatException("The tableNames parameter contained an " +
+                            "element that was not a string (json = " + jTok.ToString() + ").");
+                    var tableName = tableNameElement.Value<string>();
+                    var tableDef = Executor.GetTableDefinition(tableName);
+                    if (tableDef == null)
+                        throw new DataException("The table \"" + tableName + "\" is not a valid table.");
+                    tableNamesList.Add(tableDef.FullName);
+                } // end foreach
+            else
+                return null;
+            return tableNamesList;
         } // end method
 
 
