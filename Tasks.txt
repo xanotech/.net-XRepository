@@ -1,7 +1,10 @@
-o Have getXyz functions (createdy by MapXyzReference) return objects that reference the original object
+o Create NuGet packages for .NET and JavaScript
+o Finish Beta web site
+o Create join method (and change mapXyzReference to use the joined objects)
+o Have getXyz functions (createdy by mapXyzReference) return objects that reference the original object
 o Allow Cursor.sort to also allow IDictionary<string, bool> for NRepository
 o Make sort value of 0 simply not sort
-o Implement Security for NRepository and JSRepository
+o Implement Interceptors (for security) for NRepository and JSRepository
 o Figure out how to make Categorized Lookup Tables work with References
 o Move client-server databases to another computer
 o Setup and test databases...
@@ -10,14 +13,15 @@ o Setup and test databases...
 o Implement Producer / Consumer for reads and writes
 o Test DatabaseRepository
     - Test Improved Reference Initialization (use large random set of test data)
-o Allow sort to use IDictionary of <string, bool> (both NRepo and JSRepo)
 o Implement Mapping functionality for NRepository and JSRepository
 o See if its possible to specify columns instead of using SELECT *
 o Implement Transaction capability to NRepository and JSRepository
 o Change BackgroundTaskQueue to use BlockingCollection
 o Create a generic UserController based on wheresmylinks user code
-o Create an ajax / javascript error handler (that integrates with other tools)
-o Create NWebRepository
+o Create an universal ajax / JavaScript error handler (that integrates with other tools)
+o Extend NRepository for use over web (WebExecutor)
+o Create Java version of XRepository (JRepository)
+o Create Objective-C version of XRepository
 
 
 xRepository API...

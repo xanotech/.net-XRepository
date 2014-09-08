@@ -4,8 +4,6 @@ using System.Collections.Generic;
 
 namespace XRepository {
     public interface IExecutor : IDisposable {
-        void Dispose();
-
         IEnumerable<string> GetColumns(string tableName);
         IEnumerable<string> GetPrimaryKeys(string tableName);
         TableDefinition GetTableDefinition(string tableName);

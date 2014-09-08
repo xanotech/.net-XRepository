@@ -61,6 +61,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConnectionInfo.cs" />
+    <Compile Include="HandleAjaxError.cs" />
+    <Compile Include="WebRepositoryAdapter.cs" />
     <Compile Include="TypeInfoCache.cs" />
     <Compile Include="DatabaseExecutor.cs" />
     <Compile Include="TableDefinition.cs" />

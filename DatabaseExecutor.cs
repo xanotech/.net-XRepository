@@ -365,6 +365,9 @@ namespace XRepository {
 
         private IDbCommand CreateSelectCommand(IEnumerable<string> tableNames,
             CursorData cursorData, bool countOnly) {
+            if (!tableNames.Any())
+                throw new ArgumentException("tableNames", "The tableNames parameter was empty.");
+
             var cmd = Connection.CreateCommand();
             try {
                 AddSelectClause(cmd, tableNames, countOnly);
