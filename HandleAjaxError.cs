@@ -5,8 +5,8 @@ namespace XRepository {
     public class HandleAjaxError : HandleErrorAttribute {
         public override void OnException(ExceptionContext context) {
             var data = new {
-                Message = context.Exception.Message,
-                StackTrace = context.Exception.ToString()
+                message = context.Exception.Message,
+                stack = context.Exception.ToString()
             };
             context.Result = new JsonResult {
                 Data = data,
