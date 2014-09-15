@@ -29,8 +29,6 @@ namespace XRepository {
             set {
                 fullName = null;
                 schemaName = value;
-                if (schemaName != null)
-                    schemaName = schemaName.ToUpper();
             } // end set
         } // end property
 
@@ -42,8 +40,6 @@ namespace XRepository {
             set {
                 fullName = null;
                 tableName = value;
-                if (tableName != null)
-                    tableName = tableName.ToUpper();
             } // end set
         } // end property
 

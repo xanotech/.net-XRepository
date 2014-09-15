@@ -635,7 +635,8 @@ namespace XRepository {
 
         private DataTable FindSchemaTable(string tableName) {
             DataTable schema;
-            var sql = "SELECT * FROM " + tableName + " WHERE 1 = 0";
+            var tableDef = GetTableDefinition(tableName);
+            var sql = "SELECT * FROM " + tableDef.FullName + " WHERE 1 = 0";
             using (var cmd = Connection.CreateCommand()) {
                 cmd.CommandText = sql;
                 Log(sql);
