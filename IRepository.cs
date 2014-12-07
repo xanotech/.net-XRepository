@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace XRepository {
     public interface IRepository {
@@ -19,6 +20,12 @@ namespace XRepository {
 
         bool IsReferenceAssignmentActive { get; set; }
         bool IsUsingLikeForEquals { get; set; }
+
+        void MapColumn<T>(string propertyName, string columnName);
+        void MapColumn(Type type, string propertyName, string columnName);
+
+        void MapTable<T>(string tableName);
+        void MapTable(Type type, string tableName);
 
         void Remove(object obj);
 

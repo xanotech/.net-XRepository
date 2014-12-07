@@ -191,19 +191,18 @@ namespace XRepository {
             T obj = new T();
             var type = typeof(T);
             var typeMirror = mirrorCache[type];
-            foreach (var columnName in record.Keys) {
-                var name = FormatColumnName(columnName);
-                var prop = typeMirror.GetProperty(name, CaseInsensitiveBinding);
+            foreach (var column in record.Keys) {
+                var propertyName = GetMappedProperty(type, FormatColumnName(column));
+                var prop = typeMirror.GetProperty(propertyName, CaseInsensitiveBinding);
                 if (prop == null)
                     continue;
 
-                var val = record[columnName];
+                var val = record[column];
                 if (val != null) {
                     var propMirror = mirrorCache[prop.PropertyType];
                     if (!propMirror.IsAssignableFrom(val.GetType()))
                         val = SystemTool.SmartConvert(val, prop.PropertyType);
                 } // end if
-
                 prop.SetValue(obj, val, null);
             } // end for
             return obj;
@@ -327,11 +326,11 @@ namespace XRepository {
 
         private IEnumerable<T> Fetch<T>(Cursor<T> cursor, IEnumerable[] joinObjects)
             where T : new() {
-            try {
-                bool wasNull = idObjectMap == null;
-                if (wasNull)
-                    idObjectMap = new Dictionary<Type, IDictionary<object, object>>();
+            bool wasNull = idObjectMap == null;
+            if (wasNull)
+                idObjectMap = new Dictionary<Type, IDictionary<object, object>>();
 
+            try {
                 if (IsUsingLikeForEquals)
                     cursor.CursorData.criteria = SwitchEqualsToLike(cursor.CursorData.criteria);
 
@@ -350,13 +349,14 @@ namespace XRepository {
                 if (joinObjectMap == null)
                     InitObjectMaps(joinObjects);
                 SetReferences(objs);
+
+                return objs;
+            } finally {
                 if (wasNull) {
                     idObjectMap = null;
                     joinObjectMap = null;
                 } // end if
 
-                return objs;
-            } finally {
                 Executor.Dispose();
             } // end try-finally
         } // end method
@@ -370,6 +370,11 @@ namespace XRepository {
 
 
         public Cursor<T> Find<T>(IEnumerable<Criterion> criteria) where T : new() {
+            if (criteria != null) {
+                var type = typeof(T);
+                foreach (var criterion in criteria)
+                    criterion.Name = GetMappedColumn(type, criterion.Name);
+            } // end if
             return new Cursor<T>(criteria, Fetch, this);
         } // end method
 
@@ -416,7 +421,8 @@ namespace XRepository {
                 return null;
 
             var mirror = mirrorCache[type];
-            return mirror.GetProperty(keys.FirstOrDefault(), CaseInsensitiveBinding);
+            var propertyName = GetMappedProperty(type, keys.FirstOrDefault());
+            return mirror.GetProperty(propertyName, CaseInsensitiveBinding);
         } // end method
 
 
@@ -591,15 +597,42 @@ namespace XRepository {
 
 
 
+        public string GetMappedColumn(Type type, string propertyName) {
+            var info = infoCache[CreationStack];
+            while (type != typeof(object)) {
+                foreach (var mapping in info.columnMapCache[type])
+                    if (mapping.Value == propertyName)
+                        return mapping.Key;
+                type = type.BaseType;
+            } // end while
+            return propertyName;
+        } // end method
+
+
+
+        public string GetMappedProperty(Type type, string column) {
+            var info = infoCache[CreationStack];
+            while (type != typeof(object)) {
+                if (info.columnMapCache[type].ContainsKey(column))
+                    return info.columnMapCache[type][column];
+                type = type.BaseType;
+            } // end while
+            return column;
+        } // end method
+
+
+
         public IEnumerable<string> GetPrimaryKeys(Type type) {
             if (type == null)
                 throw new ArgumentNullException("type", "The type parameter was null.");
 
             var tableNames = GetTableNames(type);
-            if (tableNames.Any())
-                return Executor.GetPrimaryKeys(tableNames.Last());
-            else
+            if (!tableNames.Any())
                 return new string[0];
+
+            var keys = Executor.GetPrimaryKeys(tableNames.Last());
+            keys = keys.Select(k => GetMappedProperty(type, k));
+            return keys;
         } // end method
 
 
@@ -628,7 +661,8 @@ namespace XRepository {
 
 
         private IDictionary<string, object> GetValues(object obj, IEnumerable<string> tableNames) {
-            var mirror = mirrorCache[obj.GetType()];
+            var type = obj.GetType();
+            var mirror = mirrorCache[type];
             var values = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             foreach (var tableName in tableNames) {
                 var columns = Executor.GetColumns(tableName);
@@ -636,7 +670,8 @@ namespace XRepository {
                     if (values.ContainsKey(column))
                         continue;
 
-                    var prop = mirror.GetProperty(column, CaseInsensitiveBinding);
+                    var propertyName = GetMappedProperty(type, column);
+                    var prop = mirror.GetProperty(propertyName, CaseInsensitiveBinding);
                     if (prop != null)
                         values[column] = prop.GetValue(obj, null);
                 } // end for
@@ -693,15 +728,60 @@ namespace XRepository {
         private void MapObject(object id, object obj,
             params IDictionary<Type, IDictionary<object, object>>[] maps) {
             var type = obj.GetType();
+            if (!GetTableNames(type).Any())
+                return;
+
             while (type != typeof(object)) {
-                if (Executor.GetTableDefinition(type.Name) != null)
-                    foreach (var map in maps) {
-                        if (!map.ContainsKey(type))
-                            map[type] = new Dictionary<object, object>();
-                        map[type][id] = obj;
-                    } // end foreach
+                foreach (var map in maps) {
+                    if (!map.ContainsKey(type))
+                        map[type] = new Dictionary<object, object>();
+                    map[type][id] = obj;
+                } // end foreach
                 type = type.BaseType;
             } // end while
+        } // end method
+
+
+
+        public void MapColumn<T>(string propertyName, string columnName) {
+            MapColumn(typeof(T), propertyName, columnName);
+        } // end method
+
+
+
+        public void MapColumn(Type type, string propertyName, string columnName) {
+            if (type == null)
+                throw new ArgumentNullException("type", "The type parameter was null.");
+            if (propertyName == null)
+                throw new ArgumentNullException("propertyName", "The propertyName parameter was null.");
+            if (columnName == null)
+                throw new ArgumentNullException("columnName", "The columnName parameter was null.");
+
+            var info = infoCache[CreationStack];
+            info.columnMapCache[type][columnName] = propertyName;
+        } // end method
+
+
+
+        public void MapTable<T>(string tableName) {
+            MapTable(typeof(T), tableName);
+        } // end method
+
+
+
+        public void MapTable(Type type, string tableName) {
+            if (type == null)
+                throw new ArgumentNullException("type", "The type parameter was null.");
+            if (tableName == null)
+                throw new ArgumentNullException("tableName", "The tableName parameter was null.");
+
+            var info = infoCache[CreationStack];
+            var tableNames = new List<string>();
+            var baseType = type.BaseType;
+            if (baseType != typeof(object))
+                tableNames.AddRange(GetTableNames(baseType));
+            tableNames.Add(tableName);
+            info.tableNamesCache.PutValue(type, tableNames);
         } // end method
 
 
