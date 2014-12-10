@@ -81,6 +81,11 @@ namespace XRepository {
 
 
         public long Count<T>(IEnumerable<Criterion> criteria) where T : new() {
+            if (criteria != null) {
+                var type = typeof(T);
+                foreach (var criterion in criteria)
+                    criterion.Name = GetMappedColumn(type, criterion.Name);
+            } // end if
             try {
                 var tableNames = GetTableNames(typeof(T));
                 return Count(tableNames, criteria);
@@ -597,7 +602,7 @@ namespace XRepository {
 
 
 
-        public string GetMappedColumn(Type type, string propertyName) {
+        protected string GetMappedColumn(Type type, string propertyName) {
             var info = infoCache[CreationStack];
             while (type != typeof(object)) {
                 foreach (var mapping in info.columnMapCache[type])
@@ -610,7 +615,7 @@ namespace XRepository {
 
 
 
-        public string GetMappedProperty(Type type, string column) {
+        protected string GetMappedProperty(Type type, string column) {
             var info = infoCache[CreationStack];
             while (type != typeof(object)) {
                 if (info.columnMapCache[type].ContainsKey(column))
