@@ -22,6 +22,27 @@ namespace XRepository {
 
 
 
+        public Criterion() {
+        } // end constructor
+
+
+
+        public Criterion(string name, OperationType operation, object val) {
+            Name = name;
+            Operation = operation;
+            Value = val;
+        } // end constructor
+
+
+
+        public Criterion(string name, string operation, object val) {
+            Name = name;
+            Operation = ConvertStringToOperation(operation);
+            Value = val;
+        } // end constructor
+
+
+
         private static string ConvertOperationToString(OperationType operation) {
             switch (operation) {
                 case OperationType.EqualTo:
@@ -79,24 +100,9 @@ namespace XRepository {
 
 
 
-        public Criterion() {
-        } // end constructor
-
-
-
-        public Criterion(string name, OperationType operation, object val) {
-            Name = name;
-            Operation = operation;
-            Value = val;
-        } // end constructor
-
-
-
-        public Criterion(string name, string operation, object val) {
-            Name = name;
-            Operation = ConvertStringToOperation(operation);
-            Value = val;
-        } // end constructor
+        public Criterion Clone() {
+            return new Criterion(Name, Operation, Value);
+        } // end method
 
 
 

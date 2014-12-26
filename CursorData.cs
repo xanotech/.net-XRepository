@@ -13,5 +13,30 @@ namespace XRepository {
         public long? skip;
         public IDictionary<string, int> sort;
 
+
+
+        public CursorData Clone() {
+            var newCursorData = new CursorData();
+
+            if (criteria != null) {
+                var newCriteria = new List<Criterion>();
+                foreach (var criterion in criteria)
+                    newCriteria.Add(criterion.Clone());
+                newCursorData.criteria = newCriteria;
+            } // end if
+
+            newCursorData.limit = limit;
+            newCursorData.skip = skip;
+
+            if (sort != null) {
+                var newSort = new Dictionary<string, int>();
+                foreach (var key in sort.Keys)
+                    newSort[key] = sort[key];
+                newCursorData.sort = newSort;
+            } // end if
+
+            return newCursorData;
+        } // end method
+
     } // end class
 } // end namespace

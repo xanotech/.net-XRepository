@@ -358,10 +358,20 @@ namespace XRepository {
                     cursor.CursorData.criteria = SwitchEqualsToLike(cursor.CursorData.criteria);
 
                 IEnumerable<T> objs;
-                var tableNames = GetTableNames(typeof(T));
+                var type = typeof(T);
+                var tableNames = GetTableNames(type);
                 var objects = new BlockingCollection<IDictionary<string, object>>();
-                Executor.Fetch(tableNames, cursor.CursorData, objects);
-                objs = CreateObjects<T>(objects, cursor.CursorData);
+
+                // Clone cursor data and change sort columns to mapped database columns
+                var cursorData = cursor.CursorData.Clone();
+                var newSort = new Dictionary<string, int>();
+                if (cursorData.sort != null)
+                    foreach (var key in cursorData.sort.Keys)
+                        newSort[GetMappedColumn(type, key)] = cursorData.sort[key];
+                cursorData.sort = newSort;
+
+                Executor.Fetch(tableNames, cursorData, objects);
+                objs = CreateObjects<T>(objects, cursorData);
 
                 foreach (var obj in objs) {
                     var id = GetId(obj);
