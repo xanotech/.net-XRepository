@@ -47,6 +47,7 @@ namespace XRepository {
 
         public NRepository(string connectionStringName) :
             this(() => { return DataTool.OpenConnection(connectionStringName); }) {
+            ConnectionString = connectionStringName;
         } // end constructor
 
 
@@ -71,6 +72,21 @@ namespace XRepository {
             castMethod = castMethod.MakeGenericMethod(new[] {type});
             return castMethod.Invoke(null, new object[] {enumerable});
         } // end method
+
+
+
+        private string connectionString;
+        public string ConnectionString {
+            get {
+                if (connectionString == null)
+                    using (var con = openConnectionFunc())
+                        connectionString = con.ConnectionString;
+                return connectionString;
+            } // end get
+            private set {
+                connectionString = value;
+            } // end set
+        } // end 
 
 
 
@@ -144,7 +160,9 @@ namespace XRepository {
 
 
         public static NRepository Create<T>(string connectionString) where T : IDbConnection, new() {
-            return new NRepository(() => { return DataTool.OpenConnection<T>(connectionString); });
+            var repo = new NRepository(() => { return DataTool.OpenConnection<T>(connectionString); });
+            repo.ConnectionString = connectionString;
+            return repo;
         } // end method
 
 
@@ -580,7 +598,7 @@ namespace XRepository {
             if (type == null)
                 throw new ArgumentNullException("type", "The type parameter was null.");
 
-            var info = infoCache[CreationStack];
+            var info = infoCache[ConnectionString];
             return info.idPropertyCache.GetValue(type, FindIdProperty);
         } // end method
 
@@ -603,7 +621,7 @@ namespace XRepository {
 
 
         protected string GetMappedColumn(Type type, string propertyName) {
-            var info = infoCache[CreationStack];
+            var info = infoCache[ConnectionString];
             while (type != typeof(object)) {
                 foreach (var mapping in info.columnMapCache[type])
                     if (mapping.Value == propertyName)
@@ -616,7 +634,7 @@ namespace XRepository {
 
 
         protected string GetMappedProperty(Type type, string column) {
-            var info = infoCache[CreationStack];
+            var info = infoCache[ConnectionString];
             while (type != typeof(object)) {
                 if (info.columnMapCache[type].ContainsKey(column))
                     return info.columnMapCache[type][column];
@@ -646,7 +664,7 @@ namespace XRepository {
             if (type == null)
                 throw new ArgumentNullException("type", "The type parameter was null.");
 
-            var info = infoCache[CreationStack];
+            var info = infoCache[ConnectionString];
             return info.referencesCache.GetValue(type, FindReferences);
         } // end method
 
@@ -656,7 +674,7 @@ namespace XRepository {
             if (type == null)
                 throw new ArgumentNullException("type", "The type parameter was null.");
 
-            var info = infoCache[CreationStack];
+            var info = infoCache[ConnectionString];
             var tableNames = info.tableNamesCache.GetValue(type, FindTableNames);
             if (!tableNames.Any())
                 throw new DataException("There are no tables associated with \"" + type.FullName + "\".");
@@ -762,7 +780,7 @@ namespace XRepository {
             if (columnName == null)
                 throw new ArgumentNullException("columnName", "The columnName parameter was null.");
 
-            var info = infoCache[CreationStack];
+            var info = infoCache[ConnectionString];
             info.columnMapCache[type][columnName] = propertyName;
         } // end method
 
@@ -780,7 +798,7 @@ namespace XRepository {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
-            var info = infoCache[CreationStack];
+            var info = infoCache[ConnectionString];
             var tableNames = new List<string>();
             var baseType = type.BaseType;
             if (baseType != typeof(object))
