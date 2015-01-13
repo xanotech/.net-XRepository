@@ -216,13 +216,11 @@ namespace XRepository {
                 if (val == null) {
                     if (Operation == OperationType.EqualTo ||
                         Operation == OperationType.Like)
-                        opStr = "IS";
+                        opStr = "IS NULL";
                     else if (Operation == OperationType.NotEqualTo ||
                         Operation == OperationType.NotLike)
-                        opStr = "IS NOT";
-                } // end if
-
-                if (useParameters) {
+                        opStr = "IS NOT NULL";
+                } else if (useParameters) {
                     valStr = cmd.FormatParameter(Name);
                     if (cmd != null)
                         cmd.AddParameter(Name, val, schemaRow);

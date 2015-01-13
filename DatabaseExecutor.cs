@@ -446,7 +446,7 @@ namespace XRepository {
 
         private static void DefaultLog(string msg) {
             if (Debugger.IsAttached)
-                Debug.WriteLine("[XRepository] " + msg);
+                Trace.WriteLine("[XRepository] " + msg);
         } // end method
 
 
