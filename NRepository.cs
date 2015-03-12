@@ -741,6 +741,19 @@ namespace XRepository {
 
 
 
+        private bool IsValidColumn(Type type, string columnName) {
+            var tableNames = GetTableNames(type);
+            foreach (var tableName in tableNames) {
+                var columns = Executor.GetColumns(tableName);
+                foreach (var column in columns)
+                    if (column.Is(columnName))
+                        return true;
+            } // end foreach
+            return false;
+        } // end method
+
+
+
         public Action<string> Log {
             get {
                 var dbExec = Executor as DatabaseExecutor;
@@ -790,6 +803,14 @@ namespace XRepository {
             if (columnName == null)
                 throw new ArgumentNullException("columnName", "The columnName parameter was null.");
 
+            var mirror = mirrorCache[type];
+            var prop = mirror.GetProperty(propertyName, CaseInsensitiveBinding);
+            if (prop == null)
+                throw new MissingMemberException(type.FullName, propertyName);
+
+            if (!IsValidColumn(type, columnName))
+                throw new DataException("The columnName \"" + columnName + "\" does not exist.");
+            
             var info = infoCache[ConnectionString];
             info.columnMapCache[type][columnName] = propertyName;
         } // end method
@@ -807,6 +828,10 @@ namespace XRepository {
                 throw new ArgumentNullException("type", "The type parameter was null.");
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
+
+            var tableDef = Executor.GetTableDefinition(tableName);
+            if (tableDef == null)
+                throw new DataException("The table \"" + tableName + "\" is not a valid table.");
 
             var info = infoCache[ConnectionString];
             var tableNames = new List<string>();
