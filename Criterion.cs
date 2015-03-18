@@ -221,9 +221,18 @@ namespace XRepository {
                         Operation == OperationType.NotLike)
                         opStr = "IS NOT NULL";
                 } else if (useParameters) {
-                    valStr = cmd.FormatParameter(Name);
+                    // The following logic adds a 0, 1, 2, etc to the end of Name
+                    // until a match isn't alreayd present in cmd.Parameters.
+                    // This is to handle the situation where multiple Criterion
+                    // exist with the same Name (which is entirely valid).
+                    var count = 0;
+                    var name = Name;
+                    while (cmd.Parameters.Contains(name))
+                        name = Name + count++;
+
+                    valStr = cmd.FormatParameter(name);
                     if (cmd != null)
-                        cmd.AddParameter(Name, val, schemaRow);
+                        cmd.AddParameter(name, val, schemaRow);
                 } else
                     valStr = val.ToSqlString();
             } // end if

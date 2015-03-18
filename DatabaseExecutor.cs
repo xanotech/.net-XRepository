@@ -233,7 +233,7 @@ namespace XRepository {
             var sql = new StringBuilder();
             var whereAdded = false;
             foreach (var criterion in criteria) {
-                var schemaRow = GetScehmaTableRow(tableNames, criterion.Name);
+                var schemaRow = GetSchemaTableRow(tableNames, criterion.Name);
                 var table = GetTableForColumn(tableNames, criterion.Name);
                 sql.Append(Environment.NewLine);
                 sql.Append(whereAdded ? "AND " : "WHERE ");
@@ -342,7 +342,7 @@ namespace XRepository {
                     sql.Append(column);
                     valueString.Append(cmd.FormatParameter(column));
                     cmd.AddParameter(column, values[column],
-                        GetScehmaTableRow(new[] { table }, column));
+                        GetSchemaTableRow(new[] { table }, column));
                     isAfterFirst = true;
                 } // end for
 
@@ -426,7 +426,7 @@ namespace XRepository {
                         sql.Append("," + Environment.NewLine);
                     sql.Append(column + " = " + cmd.FormatParameter(column));
                     cmd.AddParameter(column, values[column],
-                        GetScehmaTableRow(new[] { table }, column));
+                        GetSchemaTableRow(new[] { table }, column));
                     isAfterFirst = true;
                 } // end foreach
                 cmd.CommandText = sql.ToString();
@@ -841,7 +841,7 @@ namespace XRepository {
 
 
 
-        private DataRow GetScehmaTableRow(IEnumerable<string> tableNames, string column) {
+        private DataRow GetSchemaTableRow(IEnumerable<string> tableNames, string column) {
             foreach (string tableName in tableNames) {
                 var schema = GetSchemaTable(tableName);
                 for (int r = 0; r < schema.Rows.Count; r++)
