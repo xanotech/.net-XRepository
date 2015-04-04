@@ -1,3 +1,6 @@
+o Fix giant IN statement problem
+o Fix bug where ids are not generated for non-nullable integer properties
+o Fix bug when submitting "undefined" as a criteria
 o Finish Beta web site
 o Create join method (and change mapXyzReference to use the joined objects)
 o Have getXyz functions (createdy by mapXyzReference) return objects that reference the original object
@@ -12,11 +15,10 @@ o Setup and test databases...
 o Implement Producer / Consumer for reads and writes
 o Test DatabaseRepository
     - Test Improved Reference Initialization (use large random set of test data)
-o Implement Mapping functionality for NRepository and JSRepository
 o See if its possible to specify columns instead of using SELECT *
-o Automate NuGet packages for NRepository and JSRepository
 o Implement Transaction capability to NRepository and JSRepository
-o Change BackgroundTaskQueue tko use BlockingCollection
+o Automate NuGet packages for NRepository and JSRepository
+o Change BackgroundTaskQueue (or is it BackgroundJobQueue) tko use BlockingCollection
 o Create a generic UserController based on wheresmylinks user code
 o Create an universal ajax / JavaScript error handler (that integrates with other tools)
 o Extend NRepository for use over web (WebExecutor)
