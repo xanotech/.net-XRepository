@@ -248,6 +248,22 @@ namespace XRepository {
 
 
 
+        private void ApplyDefaultMaxParameters(IDbConnection con) {
+            if (MaxParameters != default(int) || con == null)
+                return;
+
+            var typeName = con.GetType().FullName;
+            // TODO: Put in Oracle's max, which is 1000
+            if (typeName == "System.Data.SqlClient.SqlConnection")
+                MaxParameters = 2090;
+            else if (typeName == "System.Data.SQLite.SQLiteConnection")
+                MaxParameters = 999;
+            else if (typeName == "System.Data.SqlServerCe.SqlCeConnection")
+                MaxParameters = int.MaxValue;
+        } // end method
+
+
+
         private static void CheckForConnectionLeaks(int seconds) {
             if (!Debugger.IsAttached)
                 return;
@@ -279,6 +295,7 @@ namespace XRepository {
                     lock (nextConnectionIdLock)
                         connectionId = nextConnectionId++;
                     connection = openConnectionFunc();
+                    ApplyDefaultMaxParameters(connection);
                     Log("Connection " + connectionId + " opened");
                     ConnectionInfo = new ConnectionInfo();
                     ConnectionInfo.Id = connectionId;
@@ -299,10 +316,15 @@ namespace XRepository {
         public long Count(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria) {
             var cursorData = new CursorData();
             cursorData.criteria = criteria;
-            using (var cmd = CreateSelectCommand(tableNames, cursorData, true)) {
-                var result = cmd.ExecuteScalar();
-                return DataTool.AsLong(result) ?? 0;
-            } // end using
+            var count = 0L;
+            var splits = cursorData.SplitLargeCollections(MaxParameters);
+            foreach (var split in splits) {
+                using (var cmd = CreateSelectCommand(tableNames, split, true)) {
+                    var result = cmd.ExecuteScalar();
+                    count += (DataTool.AsLong(result) ?? 0);
+                } // end using
+            } // end foreach
+            return count;
         } // end method
 
 
@@ -467,11 +489,14 @@ namespace XRepository {
 
         public void Fetch(IEnumerable<string> tableNames, CursorData cursorData,
             BlockingCollection<IDictionary<string, object>> results) {
-            using (var cmd = CreateSelectCommand(tableNames, cursorData, false))
-            using (var reader = cmd.ExecuteReader())
-            foreach (var record in reader.ReadData()) {
-                record["_tableNames"] = tableNames;
-                results.Add(record);
+            var splits = cursorData.SplitLargeCollections(MaxParameters);
+            foreach (var split in splits) {
+                using (var cmd = CreateSelectCommand(tableNames, split, false))
+                using (var reader = cmd.ExecuteReader())
+                foreach (var record in reader.ReadData()) {
+                    record["_tableNames"] = tableNames;
+                    results.Add(record);
+                } // end foreach
             } // end foreach
         } // end method
 
@@ -773,8 +798,8 @@ namespace XRepository {
 
 
 
-        private IDbCommand GetMappedCommand(IDictionary<string, IDbCommand> commandMap,
-            string tableName, IDictionary<string, object> values, Func<IDbCommand> createCmdFunc) {
+        private IDbCommand GetMappedCommand(IDictionary<string, IDbCommand> commandMap, string tableName,
+            IDictionary<string, object> values, IDbTransaction transaction, Func<IDbCommand> createCmdFunc) {
             IDbCommand cmd;
             if (commandMap.ContainsKey(tableName)) {
                 cmd = commandMap[tableName];
@@ -786,6 +811,7 @@ namespace XRepository {
                 LogCommand(cmd);
             } else {
                 cmd = createCmdFunc();
+                cmd.Transaction = transaction;
                 cmd.Prepare();
                 commandMap[tableName] = cmd;
             } // end if-else
@@ -908,43 +934,51 @@ namespace XRepository {
 
 
 
-        public void Remove(BlockingCollection<IDictionary<string, object>> records) {
-            // Used for storing prepared statements to be used repeatedly
-            var cmdMap = new Dictionary<string, IDbCommand>();
-            try {
-                // For each object and for each of that objects associate tables,
-                // use the object's primary keys as parameters for a delete query.
-                // Commands created for first Type / tableName combination are
-                // prepared (compiled) and then stored in cmdMap to be used again
-                // for other objects.
-                foreach (var record in records) {
-                    var tableNames = record["_tableNames"] as IEnumerable<string>;
-                    if (tableNames == null)
-                        throw new MissingFieldException("The _tableNames key was not present " +
-                            "or not defined as IEnumerable<string> in one or more of the records passed.");
-                    foreach (var tableName in tableNames) {
-                        var criteria = GetPrimaryKeyCriteria(record, tableName);
+        public int MaxParameters { get; set; }
 
-                        // If the keys criteria has a null value, then the operator will be
-                        // "IS" or "IS NOT" instead of "=" or "<>" making the query usable only
-                        // once.  In that case, simply create the cmd, run it, and dispose it.
-                        // Otherwise, use the cmdMap.  If the cmd required doesn't exist
-                        // in the cmdMap, create it, prepare it, and add it.  If the cmd
-                        // does exist, change the parameters to the object's keys.
-                        if (criteria.HasNullValue())
-                            using (var cmd = CreateDeleteCommand(tableName, criteria))
+
+
+        public void Remove(BlockingCollection<IDictionary<string, object>> records) {
+            using (var transaction = Connection.BeginTransaction()) {
+                // Used for storing prepared statements to be used repeatedly
+                var cmdMap = new Dictionary<string, IDbCommand>();
+                try {
+                    // For each object and for each of that objects associate tables,
+                    // use the object's primary keys as parameters for a delete query.
+                    // Commands created for first Type / tableName combination are
+                    // prepared (compiled) and then stored in cmdMap to be used again
+                    // for other objects.
+                    foreach (var record in records) {
+                        var tableNames = record["_tableNames"] as IEnumerable<string>;
+                        if (tableNames == null)
+                            throw new MissingFieldException("The _tableNames key was not present " +
+                                "or not defined as IEnumerable<string> in one or more of the records passed.");
+                        foreach (var tableName in tableNames) {
+                            var criteria = GetPrimaryKeyCriteria(record, tableName);
+
+                            // If the keys criteria has a null value, then the operator will be
+                            // "IS" or "IS NOT" instead of "=" or "<>" making the query usable only
+                            // once.  In that case, simply create the cmd, run it, and dispose it.
+                            // Otherwise, use the cmdMap.  If the cmd required doesn't exist
+                            // in the cmdMap, create it, prepare it, and add it.  If the cmd
+                            // does exist, change the parameters to the object's keys.
+                            if (criteria.HasNullValue())
+                                using (var cmd = CreateDeleteCommand(tableName, criteria))
+                                    cmd.ExecuteNonQuery();
+                            else {
+                                var cmd = GetMappedCommand(cmdMap, tableName, criteria.ToDictionary(), transaction,
+                                    () => { return CreateDeleteCommand(tableName, criteria); });
                                 cmd.ExecuteNonQuery();
-                        else {
-                            var cmd = GetMappedCommand(cmdMap, tableName, criteria.ToDictionary(),
-                                () => { return CreateDeleteCommand(tableName, criteria); });
-                            cmd.ExecuteNonQuery();
-                        } // end if-else
+                            } // end if-else
+                        } // end foreach
                     } // end foreach
-                } // end foreach
-            } finally {
-                foreach (var cmd in cmdMap.Values)
-                    cmd.Dispose();
-            } // end try-finally
+                } finally {
+                    foreach (var cmd in cmdMap.Values)
+                        cmd.Dispose();
+                } // end try-finally
+
+                transaction.Commit();
+            } // end using
         } // end method
 
 
@@ -954,63 +988,67 @@ namespace XRepository {
 
 
         public void Save(BlockingCollection<IDictionary<string, object>> records) {
-            // Used for storing prepared statements to be used repeatedly
-            var countCmdMap = new Dictionary<string, IDbCommand>();
-            var insertCmdMap = new Dictionary<string, IDbCommand>();
-            var updateCmdMap = new Dictionary<string, IDbCommand>();
-            try {
-                foreach (var record in records) {
-                    var tableNames = record["_tableNames"] as IEnumerable<string>;
-                    if (tableNames == null)
-                        throw new MissingFieldException("The _tableNames key was not present " +
-                            "or not defined as IEnumerable<string> in one or more of the records passed.");
-                    foreach (var tableName in tableNames) {
-                        var criteria = GetPrimaryKeyCriteria(record, tableName);
-                        var criteriaAndValues = new Dictionary<string, object>(record);
-                        criteriaAndValues.AddRange(criteria.ToDictionary());
+            using (var transaction = Connection.BeginTransaction()) {
+                // Used for storing prepared statements to be used repeatedly
+                var countCmdMap = new Dictionary<string, IDbCommand>();
+                var insertCmdMap = new Dictionary<string, IDbCommand>();
+                var updateCmdMap = new Dictionary<string, IDbCommand>();
+                try {
+                    foreach (var record in records) {
+                        var tableNames = record["_tableNames"] as IEnumerable<string>;
+                        if (tableNames == null)
+                            throw new MissingFieldException("The _tableNames key was not present " +
+                                "or not defined as IEnumerable<string> in one or more of the records passed.");
+                        foreach (var tableName in tableNames) {
+                            var criteria = GetPrimaryKeyCriteria(record, tableName);
+                            var criteriaAndValues = new Dictionary<string, object>(record);
+                            criteriaAndValues.AddRange(criteria.ToDictionary());
 
-                        // If the keys criteria has a null value, then the operator will be
-                        // "IS" or "IS NOT" instead of "=" or "<>" making the query usable only
-                        // once.  In that case, simply create the cmd, run it, and dispose it.
-                        // Otherwise, use the cmdMap.  If the cmd required doesn't exist
-                        // in the cmdMap, create it, prepare it, and add it.  If the cmd
-                        // does exist, change the parameters to the object's keys.
-                        object result;
-                        long? count;
-                        var cursorData = new CursorData();
-                        cursorData.criteria = criteria;
-                        if (criteria.HasNullValue()) {
-                            using (var cmd = CreateSelectCommand(tableNames, cursorData, true))
+                            // If the keys criteria has a null value, then the operator will be
+                            // "IS" or "IS NOT" instead of "=" or "<>" making the query usable only
+                            // once.  In that case, simply create the cmd, run it, and dispose it.
+                            // Otherwise, use the cmdMap.  If the cmd required doesn't exist
+                            // in the cmdMap, create it, prepare it, and add it.  If the cmd
+                            // does exist, change the parameters to the object's keys.
+                            object result;
+                            long? count;
+                            var cursorData = new CursorData();
+                            cursorData.criteria = criteria;
+                            if (criteria.HasNullValue()) {
+                                using (var cmd = CreateSelectCommand(tableNames, cursorData, true))
+                                    result = cmd.ExecuteScalar();
+                                count = DataTool.AsLong(result) ?? 0;
+                                using (var cmd = count == 0 ?
+                                    CreateInsertCommand(tableName, record) :
+                                    CreateUpdateCommand(tableName, record, criteria))
+                                    cmd.ExecuteNonQuery();
+                            } else {
+                                IDbCommand cmd = GetMappedCommand(countCmdMap, tableName, criteria.ToDictionary(), transaction,
+                                    () => { return CreateSelectCommand(tableNames, cursorData, true); });
                                 result = cmd.ExecuteScalar();
-                            count = DataTool.AsLong(result) ?? 0;
-                            using (var cmd = count == 0 ?
-                                CreateInsertCommand(tableName, record) :
-                                CreateUpdateCommand(tableName, record, criteria))
-                                cmd.ExecuteNonQuery();
-                        } else {
-                            IDbCommand cmd = GetMappedCommand(countCmdMap, tableName, criteria.ToDictionary(),
-                                () => { return CreateSelectCommand(tableNames, cursorData, true); });
-                            result = cmd.ExecuteScalar();
-                            count = DataTool.AsLong(result) ?? 0;
+                                count = DataTool.AsLong(result) ?? 0;
 
-                            if (count == 0)
-                                cmd = GetMappedCommand(insertCmdMap, tableName, criteriaAndValues,
-                                    () => { return CreateInsertCommand(tableName, record); });
-                            else
-                                cmd = GetMappedCommand(updateCmdMap, tableName, criteriaAndValues,
-                                    () => { return CreateUpdateCommand(tableName, record, criteria); });
-                            cmd.ExecuteNonQuery();
-                        } // end if-else
+                                if (count == 0)
+                                    cmd = GetMappedCommand(insertCmdMap, tableName, criteriaAndValues, transaction,
+                                        () => { return CreateInsertCommand(tableName, record); });
+                                else
+                                    cmd = GetMappedCommand(updateCmdMap, tableName, criteriaAndValues, transaction,
+                                        () => { return CreateUpdateCommand(tableName, record, criteria); });
+                                cmd.ExecuteNonQuery();
+                            } // end if-else
+                        } // end foreach
                     } // end foreach
-                } // end foreach
-            } finally {
-                foreach (var cmd in countCmdMap.Values)
-                    cmd.Dispose();
-                foreach (var cmd in insertCmdMap.Values)
-                    cmd.Dispose();
-                foreach (var cmd in updateCmdMap.Values)
-                    cmd.Dispose();
-            } // end try-finally
+                } finally {
+                    foreach (var cmd in countCmdMap.Values)
+                        cmd.Dispose();
+                    foreach (var cmd in insertCmdMap.Values)
+                        cmd.Dispose();
+                    foreach (var cmd in updateCmdMap.Values)
+                        cmd.Dispose();
+                } // end try-finally
+
+                transaction.Commit();
+            } // end using
         } // end method
 
 

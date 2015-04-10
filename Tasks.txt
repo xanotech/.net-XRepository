@@ -1,4 +1,4 @@
-o Fix giant IN statement problem
+o Refactor Sequencer and DatabaseExecutor to allow for incrementing by many values with a single call
 o Fix bug where ids are not generated for non-nullable integer properties
 o Fix bug when submitting "undefined" as a criteria
 o Finish Beta web site

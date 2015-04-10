@@ -1,4 +1,6 @@
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace XRepository {
     public class CursorData {
@@ -36,6 +38,121 @@ namespace XRepository {
             } // end if
 
             return newCursorData;
+        } // end method
+
+
+
+        internal Criterion GetLargestCollectionCriterion(ref int maxParameters) {
+            if (maxParameters == default(int))
+                maxParameters = 500;
+            if (criteria == null)
+                return null;
+
+            var total = 0;
+            Criterion largestCollectionCriterion = null;
+            var largestCollectionCount = 0;
+            foreach (var criterion in criteria) {
+                var vals = criterion.GetValues();
+
+                // If the Value is not a collection, add 1 to total
+                // (if its not null) and skip to the next criterion.
+                if (vals == null) {
+                    if (criterion.Value != null)
+                        total++;
+                    continue;
+                } // end if
+
+                // Find the count of the collection and add it to the total.
+                var count = 0;
+                var valList = vals as List<object>;
+                if (valList != null)
+                    count = valList.Count;
+                else
+                    foreach (var element in vals)
+                        count++;
+                total += count;
+
+                // If the count of this collection is larger than what's been found in
+                // previous iterations, then set largestCollection references to current values.
+                if (count > largestCollectionCount &&
+                    criterion.Operation != Criterion.OperationType.NotEqualTo) {
+                    largestCollectionCriterion = criterion;
+                    largestCollectionCount = count;
+                } // end if
+            } // end foreach
+
+            // Since we can break up the largest collection, subtract it from the total.
+            total -= largestCollectionCount;
+
+            // If the total is still higher than the maxParameters, there's no way to split
+            // the calls up.  Basically, just set largestCollectionCriterion to null
+            // and let whatever database error occurs bubble up.  Otherwise, subtract total
+            // from maxParameters.  SplitLargeCollections will then break up the largest
+            // collection by that number.
+            if (total >= maxParameters)
+                largestCollectionCriterion = null;
+            else
+                maxParameters -= total;
+
+            return largestCollectionCriterion;
+        } // end method
+
+
+
+        internal IEnumerable<CursorData> SplitLargeCollections(int maxParameters) {
+            var cursorDatas = new List<CursorData>();
+
+            if (criteria != null)
+                foreach (var criterion in criteria)
+                    criterion.Distinctify();
+
+            var largest = GetLargestCollectionCriterion(ref maxParameters);
+            if (largest == null)
+                cursorDatas.Add(this);
+            else {
+                // Get the vals from the largest collection and then set the Value to null.
+                // Value is set to null to allow it to be null when the criterion is cloned
+                // and is reset its intial value after the split is done.
+                var vals = largest.GetValues();
+                largest.Value = null;
+
+                CursorData clone = null;
+                Criterion replacementCriterion = null;
+                List<object> replacementVals = null;
+                foreach (var val in vals) {
+                    // If clone is null, which would be either the first iteration or one
+                    // following a break, clone the current CursorData, get a reference to
+                    // the criterion matching the largest criterion (replacementCriterion)
+                    // and set its value to a new list.
+                    if (clone == null) {
+                        clone = Clone();
+                        replacementCriterion = clone.criteria.First(c =>
+                            c.Name == largest.Name &&
+                            c.Operation == largest.Operation &&
+                            c.Value == null);
+                        replacementVals = new List<object>();
+                        replacementCriterion.Value = replacementVals;
+                    } // end if
+
+                    replacementVals.Add(val);
+
+                    // Iteration break: when replacementVals is at the max, add the clone
+                    // to cursorDatas and set it to null.  If there are move values to add,
+                    // the next iteration will create a new clone.
+                    if (replacementVals.Count == maxParameters) {
+                        cursorDatas.Add(clone);
+                        clone = null;
+                    } // end if
+                } // end foreach
+
+                // If there is clone (and there probably is) add it to cursorDatas.
+                if (clone != null)
+                    cursorDatas.Add(clone);
+
+                largest.Value = vals; // Reset Value to its original, er... value.
+            } // end if-else
+
+            return cursorDatas;
         } // end method
 
     } // end class

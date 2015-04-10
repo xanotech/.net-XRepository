@@ -844,6 +844,23 @@ namespace XRepository {
 
 
 
+        public int MaxParameters {
+            get {
+                var dbExec = Executor as DatabaseExecutor;
+                if (dbExec == null)
+                    return default(int);
+
+                return dbExec.MaxParameters;
+            } // end get
+            set {
+                var dbExec = Executor as DatabaseExecutor;
+                if (dbExec != null && value != default(int))
+                    dbExec.MaxParameters = value;
+            } // end set
+        } // end property
+
+
+
         private bool RecordExists(string table, IEnumerable<Criterion> keys) {
             return Count(new[] {table}, keys) > 0;
         } // end method

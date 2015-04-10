@@ -43,6 +43,15 @@ namespace XRepository {
 
 
 
+        private static List<T> AddToList<T>(T val, List<T> list) {
+            if (list == null)
+                list = new List<T>();
+            list.Add(val);
+            return list;
+        } // end method
+
+
+
         private static string ConvertOperationToString(OperationType operation) {
             switch (operation) {
                 case OperationType.EqualTo:
@@ -63,7 +72,7 @@ namespace XRepository {
                     return "NOT LIKE";
                 default:
                     return "=";
-            }
+            } // end switch
         } // end method
 
 
@@ -92,7 +101,7 @@ namespace XRepository {
                     return OperationType.Like;
                 case "NOT LIKE":
                     return OperationType.NotLike;
-            }
+            } // end switch
 
             throw new FormatException("OperationType string \"" + str + "\" is invalid.  " +
                 "Acceptable values are: =, >, >=, <, <=, !=, LIKE, NOT LIKE (== and <> are also accepted).");
@@ -134,11 +143,91 @@ namespace XRepository {
 
 
 
-        private IEnumerable GetValueList() {
+        internal void Distinctify() {
+            var vals = GetValues();
+            if (vals == null)
+                return;
+
+            if (Operation == OperationType.GreaterThan ||
+                Operation == OperationType.GreaterThanOrEqualTo) {
+                Value = vals.FindMin();
+                return;
+            } // end if
+
+            if (Operation == OperationType.LessThan ||
+                Operation == OperationType.LessThanOrEqualTo) {
+                Value = vals.FindMax();
+                return;
+            } // end if
+
+            var hasNull = false;
+            List<bool> boolList = null;
+            List<char> charList = null;
+            List<long> longList = null;
+            List<ulong> ulongList = null;
+            List<double> doubleList = null;
+            List<decimal> decimalList = null;
+            List<DateTime> dateTimeList = null;
+            List<string> stringList = null;
+            foreach (var val in vals) {
+                if (val == null) {
+                    hasNull = true;
+                    continue;
+                } // end if
+
+                switch (Type.GetTypeCode(val.GetType())) {
+                    case TypeCode.Boolean: boolList = AddToList((bool)val, boolList); break;
+                    case TypeCode.Char: charList = AddToList((char)val, charList); break;
+                    case TypeCode.SByte: longList = AddToList((long)((sbyte)val), longList); break;
+                    case TypeCode.Int16: longList = AddToList((long)((short)val), longList); break;
+                    case TypeCode.Int32: longList = AddToList((long)((int)val), longList); break;
+                    case TypeCode.Int64: longList = AddToList((long)val, longList); break;
+                    case TypeCode.Byte: ulongList = AddToList((ulong)((byte)val), ulongList); break;
+                    case TypeCode.UInt16: ulongList = AddToList((ulong)((ushort)val), ulongList); break;
+                    case TypeCode.UInt32: ulongList = AddToList((ulong)((uint)val), ulongList); break;
+                    case TypeCode.UInt64: ulongList = AddToList((ulong)val, ulongList); break;
+                    case TypeCode.Single: doubleList = AddToList((double)((float)val), doubleList); break;
+                    case TypeCode.Double: doubleList = AddToList((double)val, doubleList); break;
+                    case TypeCode.Decimal: decimalList = AddToList((decimal)val, decimalList); break;
+                    case TypeCode.DateTime: dateTimeList = AddToList((DateTime)val, dateTimeList); break;
+                    case TypeCode.String: stringList = AddToList((string)val, stringList); break;
+                } // end switch
+            } // end foreach
+
+            var distinctList = new List<object>();
+            if (hasNull)
+                distinctList.Add(null);
+            if (boolList != null)
+                distinctList.AddRange(boolList.Distinct().Cast<object>());
+            if (charList != null)
+                distinctList.AddRange(charList.Distinct().Cast<object>());
+            if (longList != null)
+                distinctList.AddRange(longList.Distinct().Cast<object>());
+            if (ulongList != null)
+                distinctList.AddRange(ulongList.Distinct().Cast<object>());
+            if (doubleList != null)
+                distinctList.AddRange(doubleList.Distinct().Cast<object>());
+            if (decimalList != null)
+                distinctList.AddRange(decimalList.Distinct().Cast<object>());
+            if (dateTimeList != null)
+                distinctList.AddRange(dateTimeList.Distinct().Cast<object>());
+            if (stringList != null)
+                distinctList.AddRange(stringList.Distinct().Cast<object>());
+            Value = distinctList;
+        } // end method
+
+
+
+        internal IEnumerable GetValues() {
             var enumerable = Value as IEnumerable;
+
+            // Strings implement IEnumerable so make sure that if Value
+            // is null to set the returned enumerable to null
+            // as it would be for other basic data types.
             var valStr = Value as string;
             if (valStr != null)
                 enumerable = null;
+
             return enumerable;
         } // end method
 
@@ -189,30 +278,30 @@ namespace XRepository {
                 opStr = "<>";
 
             var val = Value;
-            var valList = GetValueList();
+            var vals = GetValues();
             string valStr = null;
-            if (valList != null)
+            if (vals != null)
                 switch (Operation) {
                     case OperationType.EqualTo:
                     case OperationType.Like:
                     case OperationType.NotEqualTo:
                     case OperationType.NotLike:
                         opStr = (Operation == OperationType.EqualTo || Operation == OperationType.Like) ? "IN" : "NOT IN";
-                        valStr = FormatValueList(valList, useParameters, cmd, schemaRow);
+                        valStr = FormatValueList(vals, useParameters, cmd, schemaRow);
                         break;
                     case OperationType.GreaterThan:
                     case OperationType.GreaterThanOrEqualTo:
-                        val = valList.FindMin();
-                        valList = null;
+                        val = vals.FindMin();
+                        vals = null;
                         break;
                     case OperationType.LessThan:
                     case OperationType.LessThanOrEqualTo:
-                        val = valList.FindMax();
-                        valList = null;
+                        val = vals.FindMax();
+                        vals = null;
                         break;
                 } // end switch
 
-            if (valList == null) {
+            if (vals == null) {
                 if (val == null) {
                     if (Operation == OperationType.EqualTo ||
                         Operation == OperationType.Like)
