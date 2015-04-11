@@ -115,7 +115,10 @@ namespace XRepository {
 
 
         /// <summary>
-        ///   Gets the next value in the specified sequence.
+        ///   Gets the next value in the specified sequence and increases the seed by
+        ///   the specified amount.  For example, if the seed is currently 10 and
+        ///   increaseBy is 5, the value returned is 11 and the value returned from
+        ///   the next call will be 16.
         /// </summary>
         /// <param name="table">
         ///   The name of the table from which to query.
@@ -123,13 +126,17 @@ namespace XRepository {
         /// <param name="column">
         ///   The name of the column for which to select the max value.
         /// </param>
+        /// <param name="increaseBy">
+        ///   The amount to increase the sequence by (affecting the next call).
+        /// </param>
         /// <returns>
-        ///   The next value in the specified sequence
-        ///   (1 more than a previous call).
+        ///   The next value in the specified sequence.
         /// </returns>
-        public long GetNextValue(string table, string column) {
-            long sequence;
+        public long GetNextValues(string table, string column, int increaseBy) {
+            if (increaseBy < 1)
+                throw new ArgumentException("The increaesBy parameter must be greater than 0.", "increaseBy");
 
+            long sequence;
             if (IsBackingTablePresent) {
                 using (var con = openConnectionFunc())
                 using (var transaction = con.BeginTransaction())
@@ -138,7 +145,7 @@ namespace XRepository {
                     cmd.AddParameter("ColumnName", column);
 
                     cmd.CommandText = "UPDATE " + BackingTableName + Environment.NewLine +
-                        "SET SequenceValue = SequenceValue + 1" + Environment.NewLine +
+                        "SET SequenceValue = SequenceValue + " + increaseBy + Environment.NewLine +
                         "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
                         "AND ColumnName = " + cmd.FormatParameter("ColumnName");
                     cmd.Transaction = transaction;
@@ -164,7 +171,7 @@ namespace XRepository {
                     var result = cmd.ExecuteScalar();
 
                     if (result == null || result == DBNull.Value) {
-                        sequence = GetMaxValue(cmd, table, column) + 1;
+                        sequence = GetMaxValue(cmd, table, column) + increaseBy;
                         cmd.CommandText = "INSERT INTO " + BackingTableName + Environment.NewLine +
                             "(TableName, ColumnName, SequenceValue)" + Environment.NewLine +
                             "VALUES (" + cmd.FormatParameter("TableName") + ", " +
@@ -183,11 +190,11 @@ namespace XRepository {
                     sequence = sequences[key];
                 else
                     sequence = GetMaxValue(null, table, column);
-                sequence++;
+                sequence += increaseBy;
                 sequences[key] = sequence;
             } // end else-lock
 
-            return sequence;
+            return sequence - increaseBy + 1;
         } // end method
 
 
@@ -267,7 +274,7 @@ namespace XRepository {
                 cmd.AddParameter("ColumnName", "<Sequencer.ValidateLocking>");
 
                 var thread = new Thread(() => {
-                    GetNextValue("<Sequencer.ValidateLocking>", "<Sequencer.ValidateLocking>");
+                    GetNextValues("<Sequencer.ValidateLocking>", "<Sequencer.ValidateLocking>", 1);
                 });
                 using (var transaction = con.BeginTransaction()) {
                     cmd.CommandText = "UPDATE " + BackingTableName + Environment.NewLine +

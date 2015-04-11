@@ -26,22 +26,8 @@ namespace XRepository {
 
 
 
-        protected IDictionary<string, object> ApplySequenceId(JObject jObj, string tableName) {
-            if (Sequencer == null)
-                return null;
-
-            var keys = Executor.GetPrimaryKeys(tableName);
-            if (keys.Count() != 1)
-                return null;
-            var key = keys.First();
-
-            JToken jTok;
-            if (jObj.TryGetValue(key, out jTok) &&
-                jTok.Type != JTokenType.Null &&
-                jTok.Type != JTokenType.Undefined)
-                return null;
-
-            var id = Sequencer.GetNextValue(tableName, key);
+        protected IDictionary<string, object> ApplyId(JObject jObj, string tableName, long id) {
+            var key = Executor.GetPrimaryKeys(tableName).First();
             jObj[key] = id;
             var idRecord = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             idRecord[key] = id;
@@ -223,6 +209,22 @@ namespace XRepository {
 
 
 
+        protected bool IsIdNeeded(JObject jObj, string baseTableName) {
+            if (Sequencer == null)
+                return false;
+
+            var keys = Executor.GetPrimaryKeys(baseTableName);
+            if (keys.Count() != 1)
+                return false;
+            var key = keys.First();
+
+            JToken jTok;
+            return !jObj.TryGetValue(key, out jTok) ||
+                jTok.Type == JTokenType.Null || jTok.Type == JTokenType.Undefined;
+        } // end method
+
+
+
         public Action<string> Log {
             get {
                 var dbExec = Executor as DatabaseExecutor;
@@ -275,14 +277,45 @@ namespace XRepository {
 
 
         public string Save(string data) {
+            var jObjList = CreateJObjectList(JToken.Parse(data));
+            var baseTableNameIndex = new string[jObjList.Count];
+            var isIdNeededIndex = new bool[jObjList.Count];
+            var idsNeededByTableName = new Dictionary<string, int>();
+            var index = 0;
+            foreach (var jObj in jObjList) {
+                var baseTableName = GetTableNames(jObj).First();
+                baseTableNameIndex[index] = baseTableName;
+
+                var isIdNeeded = IsIdNeeded(jObj, baseTableName);
+                isIdNeededIndex[index] = isIdNeeded;
+                if (isIdNeeded) {
+                    if (!idsNeededByTableName.ContainsKey(baseTableName))
+                        idsNeededByTableName[baseTableName] = 0;
+                    idsNeededByTableName[baseTableName]++;
+                } // end if
+                
+                index++;
+            } // end foreach
+
+            var idMap = new Dictionary<string, long>();
+            foreach (var tableName in idsNeededByTableName.Keys)
+                idMap[tableName] = Sequencer.GetNextValues(tableName,
+                    Executor.GetPrimaryKeys(tableName).First(), idsNeededByTableName[tableName]);
+
             var idRecords = new List<IDictionary<string, object>>();
             var records = new BlockingCollection<IDictionary<string, object>>();
-            var jObjList = CreateJObjectList(JToken.Parse(data));
+            index = 0;
             foreach (JObject jObj in jObjList) {
-                var tableNames = GetTableNames(jObj);
-                var idRecord = ApplySequenceId(jObj, tableNames.First());
+                IDictionary<string, object> idRecord = null;
+                if (isIdNeededIndex[index]) {
+                    var baseTableName = baseTableNameIndex[index];
+                    var id = idMap[baseTableName];
+                    idRecord = ApplyId(jObj, baseTableName, id);
+                    idMap[baseTableName]++;
+                } // end if
                 idRecords.Add(idRecord);
                 records.Add(CreateDatabaseRecord(jObj));
+                index++;
             } // end foreach
             Executor.Save(records);
             return JsonConvert.SerializeObject(idRecords);;

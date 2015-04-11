@@ -388,7 +388,7 @@ namespace XRepository {
         private IDbCommand CreateSelectCommand(IEnumerable<string> tableNames,
             CursorData cursorData, bool countOnly) {
             if (!tableNames.Any())
-                throw new ArgumentException("tableNames", "The tableNames parameter was empty.");
+                throw new ArgumentException("The tableNames parameter was empty.", "tableNames");
 
             var cmd = Connection.CreateCommand();
             try {
@@ -798,11 +798,12 @@ namespace XRepository {
 
 
 
-        private IDbCommand GetMappedCommand(IDictionary<string, IDbCommand> commandMap, string tableName,
+        private IDbCommand GetMappedCommand(IDictionary<string, IDbCommand> commandMap, IEnumerable<string> tableNames,
             IDictionary<string, object> values, IDbTransaction transaction, Func<IDbCommand> createCmdFunc) {
             IDbCommand cmd;
-            if (commandMap.ContainsKey(tableName)) {
-                cmd = commandMap[tableName];
+            var tableNamesKey = string.Join("+", tableNames);
+            if (commandMap.ContainsKey(tableNamesKey)) {
+                cmd = commandMap[tableNamesKey];
                 foreach (IDbDataParameter parameter in cmd.Parameters)
                     parameter.Set(values[parameter.ParameterName]);
 
@@ -813,7 +814,7 @@ namespace XRepository {
                 cmd = createCmdFunc();
                 cmd.Transaction = transaction;
                 cmd.Prepare();
-                commandMap[tableName] = cmd;
+                commandMap[tableNamesKey] = cmd;
             } // end if-else
             return cmd;
         } // end method
@@ -966,7 +967,7 @@ namespace XRepository {
                                 using (var cmd = CreateDeleteCommand(tableName, criteria))
                                     cmd.ExecuteNonQuery();
                             else {
-                                var cmd = GetMappedCommand(cmdMap, tableName, criteria.ToDictionary(), transaction,
+                                var cmd = GetMappedCommand(cmdMap, new[] {tableName}, criteria.ToDictionary(), transaction,
                                     () => { return CreateDeleteCommand(tableName, criteria); });
                                 cmd.ExecuteNonQuery();
                             } // end if-else
@@ -1023,16 +1024,16 @@ namespace XRepository {
                                     CreateUpdateCommand(tableName, record, criteria))
                                     cmd.ExecuteNonQuery();
                             } else {
-                                IDbCommand cmd = GetMappedCommand(countCmdMap, tableName, criteria.ToDictionary(), transaction,
+                                IDbCommand cmd = GetMappedCommand(countCmdMap, tableNames, criteria.ToDictionary(), transaction,
                                     () => { return CreateSelectCommand(tableNames, cursorData, true); });
                                 result = cmd.ExecuteScalar();
                                 count = DataTool.AsLong(result) ?? 0;
 
                                 if (count == 0)
-                                    cmd = GetMappedCommand(insertCmdMap, tableName, criteriaAndValues, transaction,
+                                    cmd = GetMappedCommand(insertCmdMap, new[] {tableName}, criteriaAndValues, transaction,
                                         () => { return CreateInsertCommand(tableName, record); });
                                 else
-                                    cmd = GetMappedCommand(updateCmdMap, tableName, criteriaAndValues, transaction,
+                                    cmd = GetMappedCommand(updateCmdMap, new[] {tableName}, criteriaAndValues, transaction,
                                         () => { return CreateUpdateCommand(tableName, record, criteria); });
                                 cmd.ExecuteNonQuery();
                             } // end if-else

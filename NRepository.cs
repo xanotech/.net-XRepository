@@ -52,20 +52,6 @@ namespace XRepository {
 
 
 
-        private void ApplySequenceId(object obj, string tableName) {
-            if (Sequencer == null)
-                return;
-
-            PropertyInfo idProperty;
-            var id = GetIntId(obj, out idProperty);
-            if (id == null && idProperty != null) {
-                id = Sequencer.GetNextValue(tableName, idProperty.Name);
-                idProperty.SetValue(obj, id, null);
-            } // end if
-        } // end method
-
-
-
         private object CastToTypedEnumerable(IEnumerable enumerable, Type type) {
             var enumerableMirror = mirrorCache[typeof(Enumerable)];
             var castMethod = enumerableMirror.GetMethod("Cast", new[] {typeof(IEnumerable)});
@@ -733,6 +719,17 @@ namespace XRepository {
 
 
 
+        protected bool IsIdNeeded(object obj, string baseTableName) {
+            if (Sequencer == null)
+                return false;
+
+            PropertyInfo idProperty;
+            var id = GetIntId(obj, out idProperty);
+            return id == null && idProperty != null;
+        } // end method
+
+
+
         public bool IsReferenceAssignmentActive { get; set; }
 
 
@@ -909,12 +906,45 @@ namespace XRepository {
 
         private void SaveRange(IEnumerable enumerable) {
             try {
-                var records = new BlockingCollection<IDictionary<string, object>>();
+                var count = enumerable.Count();
+                var baseTableNameIndex = new string[count];
+                var isIdNeededIndex = new bool[count];
+                var idsNeededByTableName = new Dictionary<string, int>();
+                var index = 0;
                 foreach (var obj in enumerable) {
-                    var tableNames = GetTableNames(obj.GetType());
-                    ApplySequenceId(obj, tableNames.First());
-                    records.Add(CreateDatabaseRecord(obj));
+                    var baseTableName = GetTableNames(obj.GetType()).First();
+                    baseTableNameIndex[index] = baseTableName;
+
+                    var isIdNeeded = IsIdNeeded(obj, baseTableName);
+                    isIdNeededIndex[index] = isIdNeeded;
+                    if (isIdNeeded) {
+                        if (!idsNeededByTableName.ContainsKey(baseTableName))
+                            idsNeededByTableName[baseTableName] = 0;
+                        idsNeededByTableName[baseTableName]++;
+                    } // end if
+                
+                    index++;
                 } // end foreach
+
+                var idMap = new Dictionary<string, long>();
+                foreach (var tableName in idsNeededByTableName.Keys)
+                    idMap[tableName] = Sequencer.GetNextValues(tableName,
+                        Executor.GetPrimaryKeys(tableName).First(), idsNeededByTableName[tableName]);
+
+                var records = new BlockingCollection<IDictionary<string, object>>();
+                index = 0;
+                foreach (var obj in enumerable) {
+                    if (isIdNeededIndex[index]) {
+                        var baseTableName = baseTableNameIndex[index];
+                        var id = idMap[baseTableName];
+                        var idProperty = GetIdProperty(obj.GetType());
+                        idProperty.SetValue(obj, id, null);
+                        idMap[baseTableName]++;
+                    } // end if
+                    records.Add(CreateDatabaseRecord(obj));
+                    index++;
+                } // end foreach
+
                 Executor.Save(records);
             } finally {
                 Executor.Dispose();

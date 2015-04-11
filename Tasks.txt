@@ -1,6 +1,5 @@
-o Refactor Sequencer and DatabaseExecutor to allow for incrementing by many values with a single call
 o Fix bug where ids are not generated for non-nullable integer properties
-o Fix bug when submitting "undefined" as a criteria
+o Fix bug when submitting "undefined" as a criteria (JSRepository)
 o Finish Beta web site
 o Create join method (and change mapXyzReference to use the joined objects)
 o Have getXyz functions (createdy by mapXyzReference) return objects that reference the original object

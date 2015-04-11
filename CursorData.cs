@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using XTools;
 
 namespace XRepository {
     public class CursorData {
@@ -63,13 +64,7 @@ namespace XRepository {
                 } // end if
 
                 // Find the count of the collection and add it to the total.
-                var count = 0;
-                var valList = vals as List<object>;
-                if (valList != null)
-                    count = valList.Count;
-                else
-                    foreach (var element in vals)
-                        count++;
+                var count = vals.Count();
                 total += count;
 
                 // If the count of this collection is larger than what's been found in
