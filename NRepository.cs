@@ -609,7 +609,7 @@ namespace XRepository {
         private long? GetIntId(object obj, out PropertyInfo idProperty) {
             var id = GetId(obj, out idProperty) as long?;
             if (idProperty != null &&
-                !typeof(long?).IsAssignableFrom(idProperty.PropertyType))
+                !idProperty.PropertyType.IsInteger())
                 idProperty = null;
             return id;
         } // end method
@@ -725,7 +725,9 @@ namespace XRepository {
 
             PropertyInfo idProperty;
             var id = GetIntId(obj, out idProperty);
-            return id == null && idProperty != null;
+
+            return idProperty != null &&
+                (id == null || (id == 0 && !idProperty.PropertyType.IsNullable()));
         } // end method
 
 
