@@ -959,8 +959,11 @@ namespace XRepository {
                 if (dbExec == null)
                     return null;
 
-                if (dbExec.Sequencer == null)
+                if (dbExec.Sequencer == null) {
                     dbExec.Sequencer = new Sequencer(openConnectionFunc);
+                    var tableDef = Executor.GetTableDefinition("Sequencer");
+                    dbExec.Sequencer.BackingTableName = tableDef.FullName;
+                } // end if
                 return dbExec.Sequencer;
             } // end get
             set {

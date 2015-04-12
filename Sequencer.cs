@@ -21,7 +21,6 @@ namespace XRepository {
 
 
         public Sequencer(Func<IDbConnection> openConnectionFunc) {
-            BackingTableName = "Sequencer";
             this.openConnectionFunc = openConnectionFunc;
             this.sequences = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         } // end constructor
