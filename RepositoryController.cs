@@ -15,7 +15,7 @@ namespace XRepository {
 
 
         private WebRepositoryAdapter adapter;
-        protected WebRepositoryAdapter Adapter {
+        public WebRepositoryAdapter Adapter {
             get {
                 if (adapter == null) {
                     var key = ControllerContext.RouteData.Values["controller"].ToString();
@@ -23,14 +23,14 @@ namespace XRepository {
                 } // end if
                 return adapter;
             } // end get
-            private set {
+            protected set {
                 adapter = value;
             } // end set
         } // property
 
 
 
-        public ActionResult Count(string tableNames, string cursor) {
+        public virtual ActionResult Count(string tableNames, string cursor) {
             return JsonContent(Adapter.Count(tableNames, cursor));
         } // end method
 
@@ -43,44 +43,51 @@ namespace XRepository {
 
 
 
-        public ActionResult Fetch(string tableNames, string cursor) {
+        public Type ExecutorType {
+            get { return Adapter.ExecutorType; }
+            set { Adapter.ExecutorType = value; }
+        } // end property
+
+
+
+        public virtual ActionResult Fetch(string tableNames, string cursor) {
             return JsonContent(Adapter.Fetch(tableNames, cursor));
         } // end method
 
 
 
-        public ActionResult GetColumns(string tableName) {
+        public virtual ActionResult GetColumns(string tableName) {
             return JsonContent(Adapter.GetColumns(tableName));
         } // end method
 
 
 
-        public ActionResult GetPrimaryKeys(string tableName) {
+        public virtual ActionResult GetPrimaryKeys(string tableName) {
             return JsonContent(Adapter.GetPrimaryKeys(tableName));
         } // end method
 
 
 
-        public ActionResult GetTableDefinition(string tableName) {
+        public virtual ActionResult GetTableDefinition(string tableName) {
             return JsonContent(Adapter.GetTableDefinition(tableName));
         } // end method
 
 
 
-        protected ActionResult JsonContent(string jsonText) {
+        protected virtual ActionResult JsonContent(string jsonText) {
             return Content(jsonText, "application/json", Encoding.UTF8);
         } // end method
 
 
 
-        public ActionResult Remove(string data) {
+        public virtual ActionResult Remove(string data) {
             Adapter.Remove(data);
             return null;
         } // end method
 
 
 
-        public ActionResult Save(string data) {
+        public virtual ActionResult Save(string data) {
             return JsonContent(Adapter.Save(data));
         } // end method
 
