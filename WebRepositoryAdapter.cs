@@ -4,18 +4,27 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
+using System.Diagnostics;
 using System.Linq;
 using XTools;
 
 namespace XRepository {
+    using IRecord = IDictionary<string, object>;
+    using Record = Dictionary<string, object>;
+
     public class WebRepositoryAdapter : IDisposable {
 
-        private Func<IDbConnection> openConnectionFunc;
+        private Executor executor;
+        
+        private Type executorType;
+
+        private Func<IDbConnection> openConnection;
 
 
 
-        public WebRepositoryAdapter(Func<IDbConnection> openConnection) {
-            openConnectionFunc = openConnection;
+        public WebRepositoryAdapter(Func<IDbConnection> openConnectionFunc) {
+            CreationStack = new StackTrace(true).ToString();
+            openConnection = openConnectionFunc;
         } // end constructor
 
 
@@ -26,10 +35,10 @@ namespace XRepository {
 
 
 
-        protected IDictionary<string, object> ApplyId(JObject jObj, string tableName, long id) {
+        protected IRecord ApplyId(JObject jObj, string tableName, long id) {
             var key = Executor.GetPrimaryKeys(tableName).First();
             jObj[key] = id;
-            var idRecord = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            var idRecord = new Record(StringComparer.OrdinalIgnoreCase);
             idRecord[key] = id;
             return idRecord;
         } // end method
@@ -63,7 +72,7 @@ namespace XRepository {
 
 
 
-        protected IDictionary<string, object> CreateDatabaseRecord(JObject jObj) {
+        protected IRecord CreateDatabaseRecord(JObject jObj) {
             var tableNames = GetTableNames(jObj);
             var record = GetValues(jObj, tableNames);
             record["_tableNames"] = tableNames;
@@ -87,17 +96,24 @@ namespace XRepository {
 
 
 
+        public string CreationStack { get; private set; }
+
+        
+        
         public void Dispose() {
             Executor.Dispose();
         } // end method
 
 
 
-        private IExecutor executor;
-        protected IExecutor Executor {
+        protected Executor Executor {
             get {
                 if (executor == null) {
-                    var dbExec = new DatabaseExecutor(openConnectionFunc);
+                    var type = ExecutorType ?? typeof(DatabaseExecutor);
+                    var constructor = type.GetConstructor(Type.EmptyTypes);
+                    var dbExec = constructor.Invoke(null) as Executor;
+                    dbExec.OpenConnection = openConnection;
+                    dbExec.RepositoryCreationStack = CreationStack;
                     executor = dbExec;
                 } // end if
                 return executor;
@@ -105,16 +121,35 @@ namespace XRepository {
             private set {
                 executor = value;
             } // end set
-        } // property
+        } // end property
 
 
 
+        public Type ExecutorType {
+            get {
+                if (executor != null)
+                    return executor.GetType();
+
+                return executorType;
+            } // end get
+            set {
+                if (executor != null)
+                    return;
+
+                if (!typeof(Executor).IsAssignableFrom(value))
+                    value = null;
+                executorType = value;
+            } // end set
+        } // end property
+
+        
+        
         public string Fetch(string tableNames, string cursor) {
             var tableNamesEnum = ParseTableNames(tableNames);
             var cursorData = JsonConvert.DeserializeObject<CursorData>(cursor);
 
-            var objectValuesList = new List<IDictionary<string, object>>();
-            var objects = new BlockingCollection<IDictionary<string, object>>();
+            var objectValuesList = new List<IRecord>();
+            var objects = new BlockingCollection<IRecord>();
             Executor.Fetch(tableNamesEnum, cursorData, objects);
             FixDates(objects);
             return JsonConvert.SerializeObject(objects);
@@ -122,16 +157,16 @@ namespace XRepository {
 
 
 
-        protected static void FixDates(IEnumerable<IDictionary<string, object>> objects) {
-            foreach (var obj in objects) {
+        protected static void FixDates(IEnumerable<IRecord> records) {
+            foreach (var record in records) {
                 var isoDates = new Dictionary<string, string>();
-                foreach (var key in obj.Keys) {
-                    var dateTime = obj[key] as DateTime?;
+                foreach (var key in record.Keys) {
+                    var dateTime = record[key] as DateTime?;
                     if (dateTime != null)
                         isoDates[key] = dateTime.Value.ToString("yyyy-MM-ddTHH:mm:ssZ");
                 } // end foreach
                 foreach (var key in isoDates.Keys)
-                    obj[key] = isoDates[key];
+                    record[key] = isoDates[key];
             } // end foreach
         } // end method
 
@@ -179,13 +214,13 @@ namespace XRepository {
 
 
 
-        protected IDictionary<string, object> GetValues(JObject jObj, IEnumerable<string> tableNames) {
+        protected IRecord GetValues(JObject jObj, IEnumerable<string> tableNames) {
             var processedColumns = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (var tableName in tableNames)
                 foreach (var column in Executor.GetColumns(tableName))
                     processedColumns[column.ToUpper()] = false;
 
-            var values = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            var values = new Record(StringComparer.OrdinalIgnoreCase);
             foreach (KeyValuePair<string, JToken> property in jObj) {
                 string propertyName = property.Key.ToUpper();
                 if (!processedColumns.ContainsKey(propertyName) || processedColumns[propertyName])
@@ -267,7 +302,7 @@ namespace XRepository {
 
 
         public void Remove(string data) {
-            var records = new BlockingCollection<IDictionary<string, object>>();
+            var records = new BlockingCollection<IRecord>();
             var jObjList = CreateJObjectList(JToken.Parse(data));
             foreach (JObject jObj in jObjList)
                 records.Add(CreateDatabaseRecord(jObj));
@@ -302,11 +337,11 @@ namespace XRepository {
                 idMap[tableName] = Sequencer.GetNextValues(tableName,
                     Executor.GetPrimaryKeys(tableName).First(), idsNeededByTableName[tableName]);
 
-            var idRecords = new List<IDictionary<string, object>>();
-            var records = new BlockingCollection<IDictionary<string, object>>();
+            var idRecords = new List<IRecord>();
+            var records = new BlockingCollection<IRecord>();
             index = 0;
             foreach (JObject jObj in jObjList) {
-                IDictionary<string, object> idRecord = null;
+                IRecord idRecord = null;
                 if (isIdNeededIndex[index]) {
                     var baseTableName = baseTableNameIndex[index];
                     var id = idMap[baseTableName];
@@ -330,7 +365,7 @@ namespace XRepository {
                     return null;
 
                 if (dbExec.Sequencer == null)
-                    dbExec.Sequencer = new Sequencer(openConnectionFunc);
+                    dbExec.Sequencer = new Sequencer(openConnection);
                 return dbExec.Sequencer;
             } // end get
             set {

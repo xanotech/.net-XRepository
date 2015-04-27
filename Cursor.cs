@@ -11,7 +11,7 @@ namespace XRepository {
         private IList<T> data;
         private Func<Cursor<T>, IEnumerable[], IEnumerable<T>> fetch;
 
-        private IRepository repository; // Only used for Count.
+        private NRepository repository; // Only used for Count.
 
         private IEnumerable[] joinObjects; // Passed to fetch, received from Join method.
 
@@ -19,7 +19,7 @@ namespace XRepository {
 
         internal Cursor(IEnumerable<Criterion> criteria,
             Func<Cursor<T>, IEnumerable[], IEnumerable<T>> fetchFunc,
-            IRepository repository) {
+            NRepository repository) {
             if (fetchFunc == null)
                 throw new ArgumentNullException("fetchFunc", "The fetchFunc parameter is null.");
 

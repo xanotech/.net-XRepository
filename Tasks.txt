@@ -1,10 +1,8 @@
-o Fix bug where ids are not generated for non-nullable integer properties
-o Fix bug when submitting "undefined" as a criteria (JSRepository)
-o Finish Beta web site
-o Create join method (and change mapXyzReference to use the joined objects)
-o Have getXyz functions (createdy by mapXyzReference) return objects that reference the original object
-o Allow Cursor.sort to also allow IDictionary<string, bool> for NRepository
+o JSRepo: Create join method (and change mapXyzReference to use the joined objects)
+o JSRepo: Have reference properties (createdy by mapXyzReference) return objects that reference the original object
+o Allow Cursor.sort to also allow IDictionary<string, bool>
 o Make sort value of 0 simply not sort
+o Finish Beta web site
 o Implement Interceptors (for security) for NRepository and JSRepository
 o Figure out how to make Categorized Lookup Tables work with References
 o Move client-server databases to another computer
@@ -16,10 +14,11 @@ o Test DatabaseRepository
     - Test Improved Reference Initialization (use large random set of test data)
 o See if its possible to specify columns instead of using SELECT *
 o Implement Transaction capability to NRepository and JSRepository
+o Document methods in XTools and XRepository (both .NET and JavaScript)
 o Automate NuGet packages for NRepository and JSRepository
-o Change BackgroundTaskQueue (or is it BackgroundJobQueue) tko use BlockingCollection
+o Change BackgroundTaskQueue (or is it BackgroundJobQueue?) to use BlockingCollection
 o Create a generic UserController based on wheresmylinks user code
-o Create an universal ajax / JavaScript error handler (that integrates with other tools)
+o Create an universal ajax / JavaScript error handler (that integrates with other tools) (does XApplication already do this?)
 o Extend NRepository for use over web (WebExecutor)
 o Create Java version of XRepository (JRepository)
 o Create Objective-C version of XRepository

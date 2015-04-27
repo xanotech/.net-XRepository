@@ -11,15 +11,23 @@ using System.Text;
 using XTools;
 
 namespace XRepository {
-    public class NRepository : IRepository {
+    using IRecord = IDictionary<string, object>;
+    using Record = Dictionary<string, object>;
 
-        private const BindingFlags CaseInsensitiveBinding =
+    public class NRepository {
+
+        protected const BindingFlags CaseInsensitiveBinding =
             BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public;
 
         private static Cache<string, TypeInfoCache> infoCache = new Cache<string, TypeInfoCache>(s => new TypeInfoCache());
-        private static Cache<Type, Mirror> mirrorCache = new Cache<Type, Mirror>(t => new Mirror(t));
+
+        protected static Cache<Type, Mirror> mirrorCache = new Cache<Type, Mirror>(t => new Mirror(t));
 
 
+
+        private Executor executor;
+        
+        private Type executorType;
 
         /// <summary>
         ///   Used exclusively when retrieving objects from the database for the purpose of
@@ -32,13 +40,13 @@ namespace XRepository {
         /// <summary>
         ///   The Func used for creating / opening a new connection (provided during construction).
         /// </summary>
-        private Func<IDbConnection> openConnectionFunc;
+        private Func<IDbConnection> openConnection;
 
 
 
-        public NRepository(Func<IDbConnection> openConnection) {
+        public NRepository(Func<IDbConnection> openConnectionFunc) {
             CreationStack = new StackTrace(true).ToString();
-            openConnectionFunc = openConnection;
+            openConnection = openConnectionFunc;
             IsReferenceAssignmentActive = true;
             IsUsingLikeForEquals = false;
         } // end constructor
@@ -53,8 +61,8 @@ namespace XRepository {
 
 
         private object CastToTypedEnumerable(IEnumerable enumerable, Type type) {
-            var enumerableMirror = mirrorCache[typeof(Enumerable)];
-            var castMethod = enumerableMirror.GetMethod("Cast", new[] {typeof(IEnumerable)});
+            var mirror = mirrorCache[typeof(Enumerable)];
+            var castMethod = mirror.GetMethod("Cast", new[] {typeof(IEnumerable)});
             castMethod = castMethod.MakeGenericMethod(new[] {type});
             return castMethod.Invoke(null, new object[] {enumerable});
         } // end method
@@ -65,7 +73,7 @@ namespace XRepository {
         public string ConnectionString {
             get {
                 if (connectionString == null)
-                    using (var con = openConnectionFunc())
+                    using (var con = openConnection())
                         connectionString = con.ConnectionString;
                 return connectionString;
             } // end get
@@ -165,7 +173,7 @@ namespace XRepository {
 
 
 
-        protected IDictionary<string, object> CreateDatabaseRecord(object obj) {
+        protected IRecord CreateDatabaseRecord(object obj) {
             var type = obj.GetType();
             var tableNames = GetTableNames(type);
             var record = GetValues(obj, tableNames);
@@ -196,13 +204,13 @@ namespace XRepository {
 
 
 
-        private T CreateObject<T>(IDictionary<string, object> record) where T : new() {
+        private T CreateObject<T>(IRecord record) where T : new() {
             T obj = new T();
             var type = typeof(T);
-            var typeMirror = mirrorCache[type];
+            var mirror = mirrorCache[type];
             foreach (var column in record.Keys) {
                 var propertyName = GetMappedProperty(type, FormatColumnName(column));
-                var prop = typeMirror.GetProperty(propertyName, CaseInsensitiveBinding);
+                var prop = mirror.GetProperty(propertyName, CaseInsensitiveBinding);
                 if (prop == null)
                     continue;
 
@@ -219,7 +227,7 @@ namespace XRepository {
 
 
 
-        private IEnumerable<T> CreateObjects<T>(IEnumerable<IDictionary<string, object>> records,
+        private IEnumerable<T> CreateObjects<T>(IEnumerable<IRecord> records,
             CursorData cursorData) where T : new() {
             var objs = new List<T>();
             var recordNum = 0;
@@ -306,11 +314,13 @@ namespace XRepository {
 
 
 
-        private IExecutor executor;
-        protected IExecutor Executor {
+        protected Executor Executor {
             get {
                 if (executor == null) {
-                    var dbExec = new DatabaseExecutor(openConnectionFunc);
+                    var type = ExecutorType ?? typeof(DatabaseExecutor);
+                    var constructor = type.GetConstructor(Type.EmptyTypes);
+                    var dbExec = constructor.Invoke(null) as Executor;
+                    dbExec.OpenConnection = openConnection;
                     dbExec.RepositoryCreationStack = CreationStack;
                     executor = dbExec;
                 } // end if
@@ -319,7 +329,26 @@ namespace XRepository {
             private set {
                 executor = value;
             } // end set
-        } // property
+        } // end property
+
+
+
+        public Type ExecutorType {
+            get {
+                if (executor != null)
+                    return executor.GetType();
+
+                return executorType;
+            } // end get
+            set {
+                if (executor != null)
+                    return;
+
+                if (!typeof(Executor).IsAssignableFrom(value))
+                    value = null;
+                executorType = value;
+            } // end set
+        } // end property
 
 
 
@@ -346,7 +375,7 @@ namespace XRepository {
                 IEnumerable<T> objs;
                 var type = typeof(T);
                 var tableNames = GetTableNames(type);
-                var objects = new BlockingCollection<IDictionary<string, object>>();
+                var objects = new BlockingCollection<IRecord>();
 
                 // Clone cursor data and change sort columns to mapped database columns
                 var cursorData = cursor.CursorData.Clone();
@@ -679,10 +708,10 @@ namespace XRepository {
 
 
 
-        private IDictionary<string, object> GetValues(object obj, IEnumerable<string> tableNames) {
+        private IRecord GetValues(object obj, IEnumerable<string> tableNames) {
             var type = obj.GetType();
             var mirror = mirrorCache[type];
-            var values = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            var values = new Record(StringComparer.OrdinalIgnoreCase);
             foreach (var tableName in tableNames) {
                 var columns = Executor.GetColumns(tableName);
                 foreach (var column in columns) {
@@ -886,7 +915,7 @@ namespace XRepository {
 
         private void RemoveRange(IEnumerable enumerable) {
             try {
-                var records = new BlockingCollection<IDictionary<string, object>>();
+                var records = new BlockingCollection<IRecord>();
                 foreach (var obj in enumerable)
                     records.Add(CreateDatabaseRecord(obj));
                 Executor.Remove(records);
@@ -933,7 +962,7 @@ namespace XRepository {
                     idMap[tableName] = Sequencer.GetNextValues(tableName,
                         Executor.GetPrimaryKeys(tableName).First(), idsNeededByTableName[tableName]);
 
-                var records = new BlockingCollection<IDictionary<string, object>>();
+                var records = new BlockingCollection<IRecord>();
                 index = 0;
                 foreach (var obj in enumerable) {
                     if (isIdNeededIndex[index]) {
@@ -962,9 +991,10 @@ namespace XRepository {
                     return null;
 
                 if (dbExec.Sequencer == null) {
-                    dbExec.Sequencer = new Sequencer(openConnectionFunc);
+                    dbExec.Sequencer = new Sequencer(openConnection);
                     var tableDef = Executor.GetTableDefinition("Sequencer");
-                    dbExec.Sequencer.BackingTableName = tableDef.FullName;
+                    if (tableDef != null)
+                        dbExec.Sequencer.BackingTableName = tableDef.FullName;
                 } // end if
                 return dbExec.Sequencer;
             } // end get

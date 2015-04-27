@@ -2,6 +2,9 @@
 using System.Collections.Generic;
 
 namespace XRepository {
+    using IRecord = IDictionary<string, object>;
+    using Record = Dictionary<string, object>;
+
     public static class CriterionTool {
 
         public static bool HasNullValue(this IEnumerable<Criterion> criteria) {
@@ -22,8 +25,8 @@ namespace XRepository {
 
 
 
-        public static IDictionary<string, object> ToDictionary(this IEnumerable<Criterion> criteria) {
-            var map = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        public static IRecord ToDictionary(this IEnumerable<Criterion> criteria) {
+            var map = new Record(StringComparer.OrdinalIgnoreCase);
             foreach (var criterion in criteria)
                 map[criterion.Name] = criterion.Value;
             return map;

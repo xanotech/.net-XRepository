@@ -8,6 +8,9 @@ using System.Text;
 using XTools;
 
 namespace XRepository {
+    using IRecord = IDictionary<string, object>;
+    using Record = Dictionary<string, object>;
+
     public class Criterion {
 
         public enum OperationType {
@@ -115,7 +118,7 @@ namespace XRepository {
 
 
 
-        internal static IEnumerable<Criterion> Create(IDictionary<string, object> criteriaMap) {
+        internal static IEnumerable<Criterion> Create(IRecord criteriaMap) {
             if (criteriaMap == null)
                 return null;
 
@@ -131,10 +134,10 @@ namespace XRepository {
             if (criteriaObj == null)
                 return null;
 
-            var criteriaMap = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-            var criteriaType = criteriaObj.GetType();
-            var criteriaMirror = mirrorCache[criteriaType];
-            foreach (var prop in criteriaMirror.GetProperties()) {
+            var criteriaMap = new Record(StringComparer.OrdinalIgnoreCase);
+            var type = criteriaObj.GetType();
+            var mirror = mirrorCache[type];
+            foreach (var prop in mirror.GetProperties()) {
                 var value = prop.GetValue(criteriaObj, null);
                 criteriaMap[prop.Name] = value;
             } // end foreach

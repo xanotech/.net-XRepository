@@ -12,7 +12,7 @@ namespace XRepository {
 
         public Criterion Criterion { get; set; }
         public object ReferencingObject { get; set; }
-        public IRepository Repository { get; set; }
+        public NRepository Repository { get; set; }
 
 
 

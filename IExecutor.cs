@@ -1,17 +1,35 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Data;
+using System.Reflection;
+using XTools;
 
 namespace XRepository {
-    public interface IExecutor : IDisposable {
-        IEnumerable<string> GetColumns(string tableName);
-        IEnumerable<string> GetPrimaryKeys(string tableName);
-        TableDefinition GetTableDefinition(string tableName);
+    using IRecord = IDictionary<string, object>;
 
-        long Count(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria);
-        void Fetch(IEnumerable<string> tableNames, CursorData cursorData,
-            BlockingCollection<IDictionary<string, object>> results);
-        void Remove(BlockingCollection<IDictionary<string, object>> data);
-        void Save(BlockingCollection<IDictionary<string, object>> data);
+    public abstract class Executor : IDisposable {
+
+        /// <summary>
+        ///   This property is the stack trace generated when the Executor is created.
+        ///   It is use to uniquely identify a particular Executor in the code set
+        ///   for debugging and error handling purposes.
+        /// </summary>
+        public string RepositoryCreationStack { get; set; }
+
+        /// <summary>
+        ///   The Func used for creating / opening a new connection.
+        /// </summary>
+        public Func<IDbConnection> OpenConnection { get; set; }
+
+        public abstract long Count(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria);
+        public abstract void Dispose();
+        public abstract void Fetch(IEnumerable<string> tableNames, CursorData cursorData,
+            BlockingCollection<IRecord> results);
+        public abstract IEnumerable<string> GetColumns(string tableName);
+        public abstract IEnumerable<string> GetPrimaryKeys(string tableName);
+        public abstract TableDefinition GetTableDefinition(string tableName);
+        public abstract void Remove(BlockingCollection<IRecord> data);
+        public abstract void Save(BlockingCollection<IRecord> data);
     } // end interface
 } // end namespace

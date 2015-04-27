@@ -10,17 +10,19 @@ using System.Reflection;
 using System.Text;
 using XTools;
 
+
+
 namespace XRepository {
-    public class DatabaseExecutor : IExecutor {
+    using IRecord = IDictionary<string, object>;
+    using Record = Dictionary<string, object>;
+    
+    public class DatabaseExecutor : Executor {
 
         public enum PagingMechanism {
             Programmatic, // Use code logic to retrieve certain sections of the data
             LimitOffset, // MySQL, PostgreSQL: SELECT * FROM SomeTable LIMIT 10 OFFSET 30
             OffsetFetchFirst // SQL Server: SELECT * FROM SomeTable ORDER BY SomeColumn OFFSET 20 ROWS FETCH FIRST 10 ROWS ONLY
         } // end enum
-
-        private const BindingFlags CaseInsensitiveBinding =
-            BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public;
 
         /// <summary>
         ///   A static collection of connectionId values with their associated ConnectionInfos.
@@ -29,6 +31,7 @@ namespace XRepository {
             new ConcurrentDictionary<long, ConnectionInfo>();
 
         private static Cache<string, DatabaseInfoCache> infoCache = new Cache<string, DatabaseInfoCache>(s => new DatabaseInfoCache());
+
         private static Cache<Type, Mirror> mirrorCache = new Cache<Type, Mirror>(t => new Mirror(t));
 
         /// <summary>
@@ -55,20 +58,9 @@ namespace XRepository {
         /// </summary>
         private long connectionId;
 
-        /// <summary>
-        ///   The Func used for creating / opening a new connection (provided during construction).
-        /// </summary>
-        private Func<IDbConnection> openConnectionFunc;
 
 
-
-        internal DatabaseExecutor(Func<IDbConnection> openConnection) {
-            openConnectionFunc = openConnection;
-        } // end constructor
-
-
-
-        private void AddFromClause(IDbCommand cmd, IEnumerable<string> tableNames) {
+        protected virtual void AddFromClause(IDbCommand cmd, IEnumerable<string> tableNames) {
             var sql = new StringBuilder();
             string lastTableName = null;
             IList<string> lastPrimaryKeys = null;
@@ -123,7 +115,7 @@ namespace XRepository {
         /// <param name="tableNames"></param>
         /// <param name="orderColumns"></param>
         /// <returns></returns>
-        private void AddOrderByClause(IDbCommand cmd, IEnumerable<string> tableNames,
+        protected virtual void AddOrderByClause(IDbCommand cmd, IEnumerable<string> tableNames,
             IDictionary<string, int> orderColumns) {
             if (orderColumns == null)
                 return;
@@ -152,7 +144,7 @@ namespace XRepository {
 
 
 
-        private void AddPagingClause(IDbCommand cmd, string tableName, CursorData cursorData) {
+        protected virtual void AddPagingClause(IDbCommand cmd, string tableName, CursorData cursorData) {
             if (cursorData.limit == null && cursorData.skip == null)
                 return;
 
@@ -188,7 +180,7 @@ namespace XRepository {
 
 
 
-        private void AddSelectClause(IDbCommand cmd, IEnumerable<string> tableNames, bool countOnly) {
+        protected virtual void AddSelectClause(IDbCommand cmd, IEnumerable<string> tableNames, bool countOnly) {
             //var mirror = mirrorCache[typeof(T)];
             if (countOnly)
                 cmd.CommandText = "SELECT COUNT(*) FROM ";
@@ -225,7 +217,7 @@ namespace XRepository {
 
 
 
-        private void AddWhereClause(IDbCommand cmd, IEnumerable<string> tableNames,
+        protected virtual void AddWhereClause(IDbCommand cmd, IEnumerable<string> tableNames,
             IEnumerable<Criterion> criteria) {
             if (criteria == null)
                 return;
@@ -264,7 +256,7 @@ namespace XRepository {
 
 
 
-        private static void CheckForConnectionLeaks(int seconds) {
+        protected static void CheckForConnectionLeaks(int seconds) {
             if (!Debugger.IsAttached)
                 return;
 
@@ -288,13 +280,13 @@ namespace XRepository {
 
 
 
-        protected IDbConnection Connection {
+        protected virtual IDbConnection Connection {
             get {
                 if (connection == null) {
                     CheckForConnectionLeaks(300);
                     lock (nextConnectionIdLock)
                         connectionId = nextConnectionId++;
-                    connection = openConnectionFunc();
+                    connection = OpenConnection();
                     ApplyDefaultMaxParameters(connection);
                     Log("Connection " + connectionId + " opened");
                     ConnectionInfo = new ConnectionInfo();
@@ -309,11 +301,11 @@ namespace XRepository {
 
 
 
-        protected ConnectionInfo ConnectionInfo { get; private set; }
+        protected ConnectionInfo ConnectionInfo { get; set; }
 
 
 
-        public long Count(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria) {
+        public override long Count(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria) {
             var cursorData = new CursorData();
             cursorData.criteria = criteria;
             var count = 0L;
@@ -346,7 +338,7 @@ namespace XRepository {
 
 
 
-        private IDbCommand CreateInsertCommand(string table, IDictionary<string, object> values) {
+        private IDbCommand CreateInsertCommand(string table, IRecord record) {
             var cmd = Connection.CreateCommand();
             try {
                 var sql = new StringBuilder("INSERT INTO " + table + Environment.NewLine + "(");
@@ -354,7 +346,7 @@ namespace XRepository {
                 bool isAfterFirst = false;
                 var columns = GetColumns(table);
                 foreach (var column in columns) {
-                    if (!values.ContainsKey(column))
+                    if (!record.ContainsKey(column))
                         continue;
 
                     if (isAfterFirst) {
@@ -363,7 +355,7 @@ namespace XRepository {
                     } // end if
                     sql.Append(column);
                     valueString.Append(cmd.FormatParameter(column));
-                    cmd.AddParameter(column, values[column],
+                    cmd.AddParameter(column, record[column],
                         GetSchemaTableRow(new[] { table }, column));
                     isAfterFirst = true;
                 } // end for
@@ -409,20 +401,20 @@ namespace XRepository {
 
 
 
-        private TableDefinition CreateTableDefinition(IEnumerable<IDictionary<string, object>> data) {
-            var count = data.Count();
+        private TableDefinition CreateTableDefinition(IEnumerable<IRecord> records) {
+            var count = records.Count();
             if (count == 0)
                 return null;
             else if (count > 1) {
-                var tableName = data.First()["table_name"];
+                var tableName = records.First()["table_name"];
                 throw new DataException("The table \"" + tableName +
                     "\" is ambiguous because it is defined in multiple database schemas (" +
-                    string.Join(", ", data.Select(record => record["TABLE_SCHEMA"])) +
+                    string.Join(", ", records.Select(record => record["TABLE_SCHEMA"])) +
                     ").  Use the Repository.Map method to explicitly define how " +
                     tableName + " maps to the database.");
             } // end else-if
 
-            var first = data.First();
+            var first = records.First();
             return new TableDefinition(first["table_schema"] as string,
                 first["table_name"] as string);
         } // end method
@@ -430,7 +422,7 @@ namespace XRepository {
 
 
         private IDbCommand CreateUpdateCommand(string table,
-            IDictionary<string, object> values, IEnumerable<Criterion> criteria) {
+            IRecord record, IEnumerable<Criterion> criteria) {
 
             var cmd = Connection.CreateCommand();
             try {
@@ -440,14 +432,14 @@ namespace XRepository {
                 bool isAfterFirst = false;
                 var columns = GetColumns(table);
                 foreach (var column in columns) {
-                    if (!values.ContainsKey(column) ||
+                    if (!record.ContainsKey(column) ||
                         primaryKeyColumns.Contains(column.ToUpper()))
                         continue;
 
                     if (isAfterFirst)
                         sql.Append("," + Environment.NewLine);
                     sql.Append(column + " = " + cmd.FormatParameter(column));
-                    cmd.AddParameter(column, values[column],
+                    cmd.AddParameter(column, record[column],
                         GetSchemaTableRow(new[] { table }, column));
                     isAfterFirst = true;
                 } // end foreach
@@ -473,7 +465,7 @@ namespace XRepository {
 
 
 
-        public void Dispose() {
+        public override void Dispose() {
             if (connection != null) {
                 connection.Dispose();
                 Log("Connection " + connectionId + " closed");
@@ -487,15 +479,15 @@ namespace XRepository {
 
 
 
-        public void Fetch(IEnumerable<string> tableNames, CursorData cursorData,
-            BlockingCollection<IDictionary<string, object>> results) {
+        public override void Fetch(IEnumerable<string> tableNames, CursorData cursorData,
+            BlockingCollection<IRecord> records) {
             var splits = cursorData.SplitLargeCollections(MaxParameters);
             foreach (var split in splits) {
                 using (var cmd = CreateSelectCommand(tableNames, split, false))
                 using (var reader = cmd.ExecuteReader())
                 foreach (var record in reader.ReadData()) {
                     record["_tableNames"] = tableNames;
-                    results.Add(record);
+                    records.Add(record);
                 } // end foreach
             } // end foreach
         } // end method
@@ -727,7 +719,7 @@ namespace XRepository {
             if (tableRows.Length != 1)
                 return null;
 
-            var record = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            var record = new Record(StringComparer.OrdinalIgnoreCase);
             record["table_schema"] = null;
             record["table_name"] = tableRows[0]["TABLE_NAME"];
             return CreateTableDefinition(new[] {record});
@@ -769,7 +761,7 @@ namespace XRepository {
 
 
 
-        private string FormatLogMessage(IDbCommand cmd) {
+        protected virtual string FormatLogMessage(IDbCommand cmd) {
             var msg = new StringBuilder(cmd.CommandText);
             if (cmd.Parameters.Count == 0)
                 return msg.ToString();
@@ -788,7 +780,7 @@ namespace XRepository {
 
 
 
-        public IEnumerable<string> GetColumns(string tableName) {
+        public override IEnumerable<string> GetColumns(string tableName) {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
@@ -799,13 +791,13 @@ namespace XRepository {
 
 
         private IDbCommand GetMappedCommand(IDictionary<string, IDbCommand> commandMap, IEnumerable<string> tableNames,
-            IDictionary<string, object> values, IDbTransaction transaction, Func<IDbCommand> createCmdFunc) {
+            IRecord record, IDbTransaction transaction, Func<IDbCommand> createCmdFunc) {
             IDbCommand cmd;
             var tableNamesKey = string.Join("+", tableNames);
             if (commandMap.ContainsKey(tableNamesKey)) {
                 cmd = commandMap[tableNamesKey];
                 foreach (IDbDataParameter parameter in cmd.Parameters)
-                    parameter.Set(values[parameter.ParameterName]);
+                    parameter.Set(record[parameter.ParameterName]);
 
                 // Only explicity log here (when the command exists after parameters
                 // are set) because createCmdFunc already logs the command.
@@ -821,7 +813,7 @@ namespace XRepository {
 
 
 
-        public PagingMechanism GetPagingMechanism(string tableName) {
+        public virtual PagingMechanism GetPagingMechanism(string tableName) {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
@@ -833,9 +825,9 @@ namespace XRepository {
 
 
 
-        private IEnumerable<Criterion> GetPrimaryKeyCriteria(IDictionary<string, object> record, string tableName) {
+        private IEnumerable<Criterion> GetPrimaryKeyCriteria(IRecord record, string tableName) {
             var primaryKeys = GetPrimaryKeys(tableName);
-            var criteriaMap = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            var criteriaMap = new Record(StringComparer.OrdinalIgnoreCase);
             foreach (var key in primaryKeys) {
                 if (!record.ContainsKey(key))
                     throw new MissingPrimaryKeyException("The object passed does " +
@@ -848,7 +840,7 @@ namespace XRepository {
 
 
 
-        public IEnumerable<string> GetPrimaryKeys(string tableName) {
+        public override IEnumerable<string> GetPrimaryKeys(string tableName) {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
@@ -858,7 +850,7 @@ namespace XRepository {
 
 
 
-        public DataTable GetSchemaTable(string tableName) {
+        protected DataTable GetSchemaTable(string tableName) {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
@@ -880,7 +872,7 @@ namespace XRepository {
 
 
 
-        public TableDefinition GetTableDefinition(string tableName) {
+        public override TableDefinition GetTableDefinition(string tableName) {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
@@ -890,7 +882,7 @@ namespace XRepository {
 
 
 
-        private string GetTableForColumn(IEnumerable<string> tableNames, string column) {
+        protected string GetTableForColumn(IEnumerable<string> tableNames, string column) {
             foreach (string tableName in tableNames) {
                 var schema = GetSchemaTable(tableName);
                 for (int r = 0; r < schema.Rows.Count; r++)
@@ -939,7 +931,7 @@ namespace XRepository {
 
 
 
-        public void Remove(BlockingCollection<IDictionary<string, object>> records) {
+        public override void Remove(BlockingCollection<IRecord> records) {
             using (var transaction = Connection.BeginTransaction()) {
                 // Used for storing prepared statements to be used repeatedly
                 var cmdMap = new Dictionary<string, IDbCommand>();
@@ -984,11 +976,7 @@ namespace XRepository {
 
 
 
-        public string RepositoryCreationStack { get; set; }
-
-
-
-        public void Save(BlockingCollection<IDictionary<string, object>> records) {
+        public override void Save(BlockingCollection<IRecord> records) {
             using (var transaction = Connection.BeginTransaction()) {
                 // Used for storing prepared statements to be used repeatedly
                 var countCmdMap = new Dictionary<string, IDbCommand>();
@@ -1002,7 +990,7 @@ namespace XRepository {
                                 "or not defined as IEnumerable<string> in one or more of the records passed.");
                         foreach (var tableName in tableNames) {
                             var criteria = GetPrimaryKeyCriteria(record, tableName);
-                            var criteriaAndValues = new Dictionary<string, object>(record);
+                            var criteriaAndValues = new Record(record);
                             criteriaAndValues.AddRange(criteria.ToDictionary());
 
                             // If the keys criteria has a null value, then the operator will be
@@ -1059,7 +1047,7 @@ namespace XRepository {
                 var info = infoCache[Connection.ConnectionString];
                 return info.sequencer;
             } // end get
-            internal set {
+            set {
                 var info = infoCache[Connection.ConnectionString];
                 info.sequencer = value;
             } // end set

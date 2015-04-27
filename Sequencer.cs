@@ -15,13 +15,13 @@ namespace XRepository {
 
         private string backingTableName;
         private bool? isBackingTablePresent;
-        private Func<IDbConnection> openConnectionFunc;
+        private Func<IDbConnection> openConnection;
         private IDictionary<string, long> sequences;
 
 
 
-        public Sequencer(Func<IDbConnection> openConnectionFunc) {
-            this.openConnectionFunc = openConnectionFunc;
+        public Sequencer(Func<IDbConnection> openConnection) {
+            this.openConnection = openConnection;
             this.sequences = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         } // end constructor
 
@@ -55,8 +55,8 @@ namespace XRepository {
 
 
 
-        public static Sequencer Create(Func<IDbConnection> openConnectionFunc) {
-            return new Sequencer(openConnectionFunc);
+        public static Sequencer Create(Func<IDbConnection> openConnection) {
+            return new Sequencer(openConnection);
         } // end method
 
 
@@ -71,7 +71,7 @@ namespace XRepository {
             if (string.IsNullOrWhiteSpace(BackingTableName))
                 return null;
 
-            using (var con = openConnectionFunc())
+            using (var con = openConnection())
             using (var cmd = con.CreateCommand()) {
                 cmd.CommandText = "SELECT * FROM " + BackingTableName + " WHERE 1 = 0";
                 try {
@@ -102,7 +102,7 @@ namespace XRepository {
         /// </returns>
         private long GetMaxValue(IDbCommand command, string table, string column) {
             if (command == null)
-                using (var con = openConnectionFunc())
+                using (var con = openConnection())
                 using (var cmd = con.CreateCommand())
                     return GetMaxValue(cmd, table, column);
 
@@ -137,7 +137,7 @@ namespace XRepository {
 
             long sequence;
             if (IsBackingTablePresent) {
-                using (var con = openConnectionFunc())
+                using (var con = openConnection())
                 using (var transaction = con.BeginTransaction())
                 using (var cmd = con.CreateCommand()) {
                     cmd.AddParameter("TableName", table);
@@ -218,7 +218,7 @@ namespace XRepository {
 
 
         private void SetupValidateLockingRecord() {
-            using (var con = openConnectionFunc())
+            using (var con = openConnection())
             using (var cmd = con.CreateCommand()) {
                 cmd.CommandText = "DELETE FROM " + BackingTableName + Environment.NewLine +
                     "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
@@ -267,7 +267,7 @@ namespace XRepository {
             SetupValidateLockingRecord();
             WaitForValidateLockingRecord();
 
-            using (var con = openConnectionFunc())
+            using (var con = openConnection())
             using (var cmd = con.CreateCommand()) {
                 cmd.AddParameter("TableName", "<Sequencer.ValidateLocking>");
                 cmd.AddParameter("ColumnName", "<Sequencer.ValidateLocking>");
@@ -315,7 +315,7 @@ namespace XRepository {
         private void WaitForValidateLockingRecord() {
             bool exists = false;
             while (!exists)
-            using (var con = openConnectionFunc())
+            using (var con = openConnection())
             using (var cmd = con.CreateCommand()) {
                 cmd.CommandText = "SELECT COUNT(*) FROM " + BackingTableName + Environment.NewLine +
                     "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
