@@ -18,10 +18,10 @@ o Document methods in XTools and XRepository (both .NET and JavaScript)
 o Automate NuGet packages for NRepository and JSRepository
 o Change BackgroundTaskQueue (or is it BackgroundJobQueue?) to use BlockingCollection
 o Create a generic UserController based on wheresmylinks user code
-o Create an universal ajax / JavaScript error handler (that integrates with other tools) (does XApplication already do this?)
+o Create a universal ajax / JavaScript error handler (that integrates with other tools) (does XApplication already do this?)
 o Extend NRepository for use over web (WebExecutor)
 o Create Java version of XRepository (JRepository)
-o Create Objective-C version of XRepository
+o Create Objective-C version of XRepository (iRepository)
 
 
 xRepository API...

@@ -695,13 +695,13 @@ namespace XRepository {
 
 
 
-        public IEnumerable<string> GetTableNames(Type type) {
+        public IEnumerable<string> GetTableNames(Type type, bool isSilent = false) {
             if (type == null)
                 throw new ArgumentNullException("type", "The type parameter was null.");
 
             var info = infoCache[ConnectionString];
             var tableNames = info.tableNamesCache.GetValue(type, FindTableNames);
-            if (!tableNames.Any())
+            if (!tableNames.Any() && !isSilent)
                 throw new DataException("There are no tables associated with \"" + type.FullName + "\".");
             return tableNames;
         } // end method
@@ -865,7 +865,7 @@ namespace XRepository {
             var tableNames = new List<string>();
             var baseType = type.BaseType;
             if (baseType != typeof(object))
-                tableNames.AddRange(GetTableNames(baseType));
+                tableNames.AddRange(GetTableNames(baseType, true));
             tableNames.Add(tableName);
             info.tableNamesCache.PutValue(type, tableNames);
         } // end method
