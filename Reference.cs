@@ -7,13 +7,13 @@ using XTools;
 namespace XRepository {
     class Reference {
 
-        internal bool IsMany { get; set; } // end property
+        internal bool IsMultiple { get; set; } // end property
 
 
 
-        internal bool IsOne {
-            get { return !IsMany; }
-            set { IsMany = !value; }
+        internal bool IsSingle {
+            get { return !IsMultiple; }
+            set { IsMultiple = !value; }
         } // end property
 
 

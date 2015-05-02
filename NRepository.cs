@@ -269,7 +269,7 @@ namespace XRepository {
 
             string prefix;
             Type referencedType, primaryType, foreignType;
-            var isMany = true;
+            var isMultiple = true;
             if (property.PropertyType.IsGenericType &&
                 property.PropertyType.GetGenericTypeDefinition() == typeof(IEnumerable<>)) {
                 referencedType = property.PropertyType.GetGenericArguments()[0];
@@ -280,7 +280,7 @@ namespace XRepository {
                 foreignType = referencedType;
                 prefix = primaryType.Name;
             } else {
-                isMany = false;
+                isMultiple = false;
                 referencedType = property.PropertyType;
                 primaryType = property.PropertyType;
                 foreignType = property.DeclaringType;
@@ -301,7 +301,7 @@ namespace XRepository {
                 return null;
 
             var reference = new Reference();
-            reference.IsMany = isMany;
+            reference.IsMultiple = isMultiple;
             reference.KeyProperty = keyProperty;
             reference.ValueProperty = property;
             reference.ReferencedType = referencedType;
@@ -506,7 +506,7 @@ namespace XRepository {
             var idsToFind = new Dictionary<Type, IList<object>>();
             foreach (var obj in objs)
             foreach (var reference in references)
-            if (reference.IsOne) {
+            if (reference.IsSingle) {
                 var id = reference.KeyProperty.GetValue(obj, null);
                 if (id == null)
                     continue;
@@ -1007,13 +1007,13 @@ namespace XRepository {
 
 
 
-        private void SetManyReferences(IEnumerable objs, IEnumerable<Reference> references) {
+        private void SetMultipleReferences(IEnumerable objs, IEnumerable<Reference> references) {
             // This funky collection holds enumerables (ILists) keyed by Type and KeyProperty value == id
             var joinEnumerables = new Dictionary<Type, IDictionary<object, IList<object>>>();
 
             foreach (var obj in objs)
             foreach (var reference in references)
-            if (reference.IsMany) {
+            if (reference.IsMultiple) {
                 var id = GetId(obj);
                 if (id == null)
                     continue;
@@ -1044,10 +1044,10 @@ namespace XRepository {
 
 
 
-        private void SetOneReferences(IEnumerable objs, IEnumerable<Reference> references) {
+        private void SetSingleReferences(IEnumerable objs, IEnumerable<Reference> references) {
             foreach (var obj in objs)
             foreach (var reference in references)
-            if (reference.IsOne) {
+            if (reference.IsSingle) {
                 var id = reference.KeyProperty.GetValue(obj, null);
                 if (id == null)
                     continue;
@@ -1064,9 +1064,9 @@ namespace XRepository {
         private void SetReferences(IEnumerable objs) {
             var type = objs.GetType().GetGenericArguments()[0];
             var references = GetReferences(type);
-            SetManyReferences(objs, references);
+            SetMultipleReferences(objs, references);
             FindReferenceIds(objs, references);
-            SetOneReferences(objs, references);
+            SetSingleReferences(objs, references);
         } // end method
 
 
