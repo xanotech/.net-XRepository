@@ -1,5 +1,3 @@
-o Allow Cursor.sort to also allow IDictionary<string, bool>
-o Make sort value of 0 simply not sort
 o Finish Beta web site
 o Implement Interceptors (for security) for NRepository and JSRepository
 o Figure out how to make Categorized Lookup Tables work with References
