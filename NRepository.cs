@@ -77,7 +77,7 @@ namespace XRepository {
                         connectionString = con.ConnectionString;
                 return connectionString;
             } // end get
-            private set {
+            protected set {
                 connectionString = value;
             } // end set
         } // end 
@@ -141,7 +141,7 @@ namespace XRepository {
 
 
 
-        protected long Count(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria) {
+        protected virtual long Count(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria) {
             try {
                 if (IsUsingLikeForEquals)
                     criteria = SwitchEqualsToLike(criteria);
@@ -310,7 +310,7 @@ namespace XRepository {
 
 
 
-        public string CreationStack { get; private set; }
+        public string CreationStack { get; protected set; }
 
 
 
@@ -352,17 +352,25 @@ namespace XRepository {
 
 
 
-        private static void DisposeMappedCommands(Dictionary<Type, IDictionary<string, IDbCommand>> commandMap) {
-            foreach (var subMap in commandMap.Values)
-            if (subMap != null)
-            foreach (var cmd in subMap.Values)
-            if (cmd != null)
-                cmd.Dispose();
+        protected virtual IEnumerable<T> Fetch<T>(Cursor<T> cursor) where T : new() {
+            var type = typeof(T);
+
+            // Clone cursor data and change sort columns to mapped database columns
+            var cursorData = cursor.CursorData.Clone();
+            var newSort = new Dictionary<string, int>();
+            if (cursorData.sort != null)
+                foreach (var key in cursorData.sort.Keys)
+                    newSort[GetMappedColumn(type, key)] = cursorData.sort[key];
+            cursorData.sort = newSort;
+
+            var objects = new BlockingCollection<IRecord>();
+            Executor.Fetch(GetTableNames(type), cursorData, objects);
+            return CreateObjects<T>(objects, cursorData);
         } // end method
 
 
 
-        private IEnumerable<T> Fetch<T>(Cursor<T> cursor, IEnumerable[] joinObjects)
+        protected IEnumerable<T> Fetch<T>(Cursor<T> cursor, IEnumerable[] joinObjects)
             where T : new() {
             bool wasNull = idObjectMap == null;
             if (wasNull)
@@ -372,21 +380,7 @@ namespace XRepository {
                 if (IsUsingLikeForEquals)
                     cursor.CursorData.criteria = SwitchEqualsToLike(cursor.CursorData.criteria);
 
-                IEnumerable<T> objs;
-                var type = typeof(T);
-                var tableNames = GetTableNames(type);
-                var objects = new BlockingCollection<IRecord>();
-
-                // Clone cursor data and change sort columns to mapped database columns
-                var cursorData = cursor.CursorData.Clone();
-                var newSort = new Dictionary<string, int>();
-                if (cursorData.sort != null)
-                    foreach (var key in cursorData.sort.Keys)
-                        newSort[GetMappedColumn(type, key)] = cursorData.sort[key];
-                cursorData.sort = newSort;
-
-                Executor.Fetch(tableNames, cursorData, objects);
-                objs = CreateObjects<T>(objects, cursorData);
+                var objs = Fetch(cursor);
 
                 foreach (var obj in objs) {
                     var id = GetId(obj);
@@ -670,7 +664,7 @@ namespace XRepository {
 
 
 
-        public IEnumerable<string> GetPrimaryKeys(Type type) {
+        public virtual IEnumerable<string> GetPrimaryKeys(Type type) {
             if (type == null)
                 throw new ArgumentNullException("type", "The type parameter was null.");
 
@@ -708,7 +702,7 @@ namespace XRepository {
 
 
 
-        private IRecord GetValues(object obj, IEnumerable<string> tableNames) {
+        protected IRecord GetValues(object obj, IEnumerable<string> tableNames) {
             var type = obj.GetType();
             var mirror = mirrorCache[type];
             var values = new Record(StringComparer.OrdinalIgnoreCase);
@@ -889,12 +883,6 @@ namespace XRepository {
 
 
 
-        private bool RecordExists(string table, IEnumerable<Criterion> keys) {
-            return Count(new[] {table}, keys) > 0;
-        } // end method
-
-
-
         private object ReflectedFind(Type type, object criteria) {
             var mirror = mirrorCache[GetType()];
             var method = mirror.GetMethod("Find", new[] {typeof(object)});
@@ -913,7 +901,7 @@ namespace XRepository {
 
 
 
-        private void RemoveRange(IEnumerable enumerable) {
+        protected virtual void RemoveRange(IEnumerable enumerable) {
             try {
                 var records = new BlockingCollection<IRecord>();
                 foreach (var obj in enumerable)
@@ -935,7 +923,7 @@ namespace XRepository {
 
 
 
-        private void SaveRange(IEnumerable enumerable) {
+        protected virtual void SaveRange(IEnumerable enumerable) {
             try {
                 var count = enumerable.Count();
                 var baseTableNameIndex = new string[count];

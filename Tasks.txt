@@ -1,13 +1,11 @@
-o Finish Beta web site
 o Implement Interceptors (for security) for NRepository and JSRepository
-o Figure out how to make Categorized Lookup Tables work with References
+o Finish Beta web site
 o Move client-server databases to another computer
 o Setup and test databases...
     - Sybase
     - Teradata
 o Implement Producer / Consumer for reads and writes
-o Test DatabaseRepository
-    - Test Improved Reference Initialization (use large random set of test data)
+o Figure out how to make Categorized Lookup Tables work with References
 o See if its possible to specify columns instead of using SELECT *
 o Implement Transaction capability to NRepository and JSRepository
 o Document methods in XTools and XRepository (both .NET and JavaScript)
@@ -19,32 +17,6 @@ o Extend NRepository for use over web (WebExecutor)
 o Create Java version of XRepository (JRepository)
 o Create Objective-C version of XRepository (iRepository)
 
-
-xRepository API...
-count(Prototype || tablename, [criteriaObject]):
-    returns the number of objects matching the criteria
-create(Prototype || tablename): returns a new object (with null properties based on table)
-find(Prototype || tablename, [criteriaObject]): returns a cursor
-    count([applySkipLimit]) - if applySkipLimit, counts number of records that will
-        be returned by the cursor.  if not, counts total number of records.
-    forEach(callback)
-    hasNext - tells you if next will return a document (or null)
-    limit(maxObjects)
-    map(callback)
-    next() - gets the next (single) record
-    size() - same as count(true)
-    skip(numToSkip) - number of records to skip before returning results
-    sort(sortObject) - sortObject keys are properties.
-        1 indicates ascending, -1 indicates descending
-    toArray() - returns all records
-findOne(Prototype || tablename, [criteriaObject])
-remove([Prototype || tablename], object or objectArray):
-    object(s) provided must have primary keys specified
-save([Prototype || tablename], object or objectArray):
-    primary keys not present: will assume is new and attempt to autoGenerate key value.
-    primary keys specified:
-        if _repoData is present, it will use this to determine if the object is new or not
-        if _repoData is not present, it will see if there is already a record in the db
 
 
 Generic User Domain
