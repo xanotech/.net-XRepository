@@ -9,22 +9,15 @@ using System.Linq;
 using XTools;
 
 namespace XRepository {
+    using System.Reflection;
     using IRecord = IDictionary<string, object>;
     using Record = Dictionary<string, object>;
 
-    public class WebRepositoryAdapter : IDisposable {
+    public class WebRepositoryAdapter : RepositoryBase, IDisposable {
 
-        private Executor executor;
-        
-        private Type executorType;
-
-        private Func<IDbConnection> openConnection;
-
-
-
-        public WebRepositoryAdapter(Func<IDbConnection> openConnectionFunc) {
+        public WebRepositoryAdapter(Func<IDbConnection> openConnection) {
             CreationStack = new StackTrace(true).ToString();
-            openConnection = openConnectionFunc;
+            OpenConnection = openConnection;
         } // end constructor
 
 
@@ -48,6 +41,7 @@ namespace XRepository {
         public string Count(string tableNames, string cursor) {
             var tableNamesEnum = ParseTableNames(tableNames);
             var cursorData = JsonConvert.DeserializeObject<CursorData>(cursor);
+            InvokeCountInterceptors(tableNamesEnum, cursorData.criteria);
             var count = Executor.Count(tableNamesEnum, cursorData.criteria);
             return JsonConvert.SerializeObject(count);
         } // end method
@@ -96,60 +90,19 @@ namespace XRepository {
 
 
 
-        public string CreationStack { get; private set; }
-
-        
-        
         public void Dispose() {
             Executor.Dispose();
         } // end method
 
 
 
-        protected Executor Executor {
-            get {
-                if (executor == null) {
-                    var type = ExecutorType ?? typeof(DatabaseExecutor);
-                    var constructor = type.GetConstructor(Type.EmptyTypes);
-                    var dbExec = constructor.Invoke(null) as Executor;
-                    dbExec.OpenConnection = openConnection;
-                    dbExec.RepositoryCreationStack = CreationStack;
-                    executor = dbExec;
-                } // end if
-                return executor;
-            } // end get
-            private set {
-                executor = value;
-            } // end set
-        } // end property
-
-
-
-        public Type ExecutorType {
-            get {
-                if (executor != null)
-                    return executor.GetType();
-
-                return executorType;
-            } // end get
-            set {
-                if (executor != null)
-                    return;
-
-                if (!typeof(Executor).IsAssignableFrom(value))
-                    value = null;
-                executorType = value;
-            } // end set
-        } // end property
-
-        
-        
         public string Fetch(string tableNames, string cursor) {
             var tableNamesEnum = ParseTableNames(tableNames);
             var cursorData = JsonConvert.DeserializeObject<CursorData>(cursor);
 
             var objectValuesList = new List<IRecord>();
             var objects = new BlockingCollection<IRecord>();
+            InvokeFindInterceptors(tableNamesEnum, cursorData.criteria);
             Executor.Fetch(tableNamesEnum, cursorData, objects);
             FixDates(objects);
             return JsonConvert.SerializeObject(objects);
@@ -260,22 +213,6 @@ namespace XRepository {
 
 
 
-        public Action<string> Log {
-            get {
-                var dbExec = Executor as DatabaseExecutor;
-                if (dbExec == null)
-                    return null;
-                return dbExec.Log;
-            } // end get
-            set {
-                var dbExec = Executor as DatabaseExecutor;
-                if (dbExec != null)
-                    dbExec.Log = value;
-            } // end set
-        } // end property
-
-
-
         protected IEnumerable<string> ParseTableNames(string tableNames) {
             var tableNamesList = new List<string>();
             if (string.IsNullOrEmpty(tableNames))
@@ -304,8 +241,12 @@ namespace XRepository {
         public void Remove(string data) {
             var records = new BlockingCollection<IRecord>();
             var jObjList = CreateJObjectList(JToken.Parse(data));
-            foreach (JObject jObj in jObjList)
-                records.Add(CreateDatabaseRecord(jObj));
+            foreach (JObject jObj in jObjList) {
+                var record = CreateDatabaseRecord(jObj);
+                var tableNames = record["_tableNames"] as IEnumerable<string>;
+                InvokeRemoveInterceptors(tableNames, record);
+                records.Add(record);
+            } // end foreach
             Executor.Remove(records);
         } // end method
 
@@ -349,31 +290,16 @@ namespace XRepository {
                     idMap[baseTableName]++;
                 } // end if
                 idRecords.Add(idRecord);
-                records.Add(CreateDatabaseRecord(jObj));
+
+                var record = CreateDatabaseRecord(jObj);
+                var tableNames = record["_tableNames"] as IEnumerable<string>;
+                InvokeSaveInterceptors(tableNames, record);
+                records.Add(record);
                 index++;
             } // end foreach
             Executor.Save(records);
             return JsonConvert.SerializeObject(idRecords);;
         } // end method
-
-
-
-        public Sequencer Sequencer {
-            get {
-                var dbExec = Executor as DatabaseExecutor;
-                if (dbExec == null)
-                    return null;
-
-                if (dbExec.Sequencer == null)
-                    dbExec.Sequencer = new Sequencer(openConnection);
-                return dbExec.Sequencer;
-            } // end get
-            set {
-                var dbExec = Executor as DatabaseExecutor;
-                if (dbExec != null && value != null)
-                    dbExec.Sequencer = value;
-            } // end set
-        } // end property
 
     } // end class
 } // end namespace

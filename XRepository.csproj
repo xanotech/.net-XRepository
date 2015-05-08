@@ -48,6 +48,8 @@
   <ItemGroup>
     <Compile Include="ConnectionInfo.cs" />
     <Compile Include="HandleAjaxError.cs" />
+    <Compile Include="Interceptor.cs" />
+    <Compile Include="RepositoryBase.cs" />
     <Compile Include="WebRepositoryAdapter.cs" />
     <Compile Include="TypeInfoCache.cs" />
     <Compile Include="DatabaseExecutor.cs" />

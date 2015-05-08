@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Web.Mvc;
 using System.Web.Routing;
@@ -12,6 +14,8 @@ namespace XRepository {
 
         private static IDictionary<string, Func<IDbConnection>> connectionFuncs = new Dictionary<string, Func<IDbConnection>>();
 
+        private static ConcurrentSet<Type> pendingInterceptorTypes = new ConcurrentSet<Type>();
+
 
 
         private WebRepositoryAdapter adapter;
@@ -20,6 +24,11 @@ namespace XRepository {
                 if (adapter == null) {
                     var key = ControllerContext.RouteData.Values["controller"].ToString();
                     adapter = new WebRepositoryAdapter(connectionFuncs[key]);
+                } // end if
+                if (pendingInterceptorTypes.Any()) {
+                    foreach (var type in pendingInterceptorTypes)
+                        adapter.RegisterInterceptor(type);
+                    pendingInterceptorTypes.Clear();
                 } // end if
                 return adapter;
             } // end get
@@ -80,6 +89,28 @@ namespace XRepository {
 
 
 
+        public static void RegisterInterceptor<T>() where T : Interceptor {
+            RegisterInterceptor(typeof(T));
+        } // end method
+
+
+
+        public static void RegisterInterceptor(Type interceptorType) {
+            pendingInterceptorTypes.TryAdd(interceptorType);
+        } // end method
+
+
+
+        public static void RegisterInterceptors(Assembly assembly) {
+            if (assembly == null)
+                throw new ArgumentNullException("assembly");
+
+            foreach (var type in assembly.GetTypes())
+                RegisterInterceptor(type);
+        } // end method
+
+        
+        
         public virtual ActionResult Remove(string data) {
             Adapter.Remove(data);
             return null;

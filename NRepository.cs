@@ -8,13 +8,14 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Web;
 using XTools;
 
 namespace XRepository {
     using IRecord = IDictionary<string, object>;
     using Record = Dictionary<string, object>;
 
-    public class NRepository {
+    public class NRepository : RepositoryBase {
 
         protected const BindingFlags CaseInsensitiveBinding =
             BindingFlags.IgnoreCase | BindingFlags.Instance | BindingFlags.Public;
@@ -25,10 +26,6 @@ namespace XRepository {
 
 
 
-        private Executor executor;
-        
-        private Type executorType;
-
         /// <summary>
         ///   Used exclusively when retrieving objects from the database for the purpose of
         ///   setting references values (SetReferences) and only exists for the current thread.
@@ -37,16 +34,12 @@ namespace XRepository {
 
         private IDictionary<Type, IDictionary<object, object>> joinObjectMap;
 
-        /// <summary>
-        ///   The Func used for creating / opening a new connection (provided during construction).
-        /// </summary>
-        private Func<IDbConnection> openConnection;
 
 
 
-        public NRepository(Func<IDbConnection> openConnectionFunc) {
+        public NRepository(Func<IDbConnection> openConnection) {
             CreationStack = new StackTrace(true).ToString();
-            openConnection = openConnectionFunc;
+            OpenConnection = openConnection;
             IsReferenceAssignmentActive = true;
             IsUsingLikeForEquals = false;
         } // end constructor
@@ -66,21 +59,6 @@ namespace XRepository {
             castMethod = castMethod.MakeGenericMethod(new[] {type});
             return castMethod.Invoke(null, new object[] {enumerable});
         } // end method
-
-
-
-        private string connectionString;
-        public string ConnectionString {
-            get {
-                if (connectionString == null)
-                    using (var con = openConnection())
-                        connectionString = con.ConnectionString;
-                return connectionString;
-            } // end get
-            protected set {
-                connectionString = value;
-            } // end set
-        } // end 
 
 
 
@@ -145,6 +123,7 @@ namespace XRepository {
             try {
                 if (IsUsingLikeForEquals)
                     criteria = SwitchEqualsToLike(criteria);
+                InvokeCountInterceptors(tableNames, criteria);
                 return Executor.Count(tableNames, criteria);
             } finally {
                 Executor.Dispose();
@@ -310,48 +289,6 @@ namespace XRepository {
 
 
 
-        public string CreationStack { get; protected set; }
-
-
-
-        protected Executor Executor {
-            get {
-                if (executor == null) {
-                    var type = ExecutorType ?? typeof(DatabaseExecutor);
-                    var constructor = type.GetConstructor(Type.EmptyTypes);
-                    var dbExec = constructor.Invoke(null) as Executor;
-                    dbExec.OpenConnection = openConnection;
-                    dbExec.RepositoryCreationStack = CreationStack;
-                    executor = dbExec;
-                } // end if
-                return executor;
-            } // end get
-            private set {
-                executor = value;
-            } // end set
-        } // end property
-
-
-
-        public Type ExecutorType {
-            get {
-                if (executor != null)
-                    return executor.GetType();
-
-                return executorType;
-            } // end get
-            set {
-                if (executor != null)
-                    return;
-
-                if (!typeof(Executor).IsAssignableFrom(value))
-                    value = null;
-                executorType = value;
-            } // end set
-        } // end property
-
-
-
         protected virtual IEnumerable<T> Fetch<T>(Cursor<T> cursor) where T : new() {
             var type = typeof(T);
 
@@ -363,8 +300,10 @@ namespace XRepository {
                     newSort[GetMappedColumn(type, key)] = cursorData.sort[key];
             cursorData.sort = newSort;
 
+            var tableNames = GetTableNames(typeof(T));
+            InvokeFindInterceptors(tableNames, cursorData.criteria);
             var objects = new BlockingCollection<IRecord>();
-            Executor.Fetch(GetTableNames(type), cursorData, objects);
+            Executor.Fetch(tableNames, cursorData, objects);
             return CreateObjects<T>(objects, cursorData);
         } // end method
 
@@ -776,23 +715,6 @@ namespace XRepository {
 
 
 
-        public Action<string> Log {
-            get {
-                var dbExec = Executor as DatabaseExecutor;
-                if (dbExec == null)
-                    return null;
-
-                return dbExec.Log;
-            } // end get
-            set {
-                var dbExec = Executor as DatabaseExecutor;
-                if (dbExec != null && value != null)
-                    dbExec.Log = value;
-            } // end set
-        } // end property
-
-
-
         private void MapObject(object id, object obj,
             params IDictionary<Type, IDictionary<object, object>>[] maps) {
             var type = obj.GetType();
@@ -904,8 +826,12 @@ namespace XRepository {
         protected virtual void RemoveRange(IEnumerable enumerable) {
             try {
                 var records = new BlockingCollection<IRecord>();
-                foreach (var obj in enumerable)
-                    records.Add(CreateDatabaseRecord(obj));
+                foreach (var obj in enumerable) {
+                    var record = CreateDatabaseRecord(obj);
+                    var tableNames = record["_tableNames"] as IEnumerable<string>;
+                    InvokeRemoveInterceptors(tableNames, record);
+                    records.Add(record);
+                } // end foreach
                 Executor.Remove(records);
             } finally {
                 Executor.Dispose();
@@ -960,7 +886,11 @@ namespace XRepository {
                         idProperty.SetValue(obj, id, null);
                         idMap[baseTableName]++;
                     } // end if
-                    records.Add(CreateDatabaseRecord(obj));
+
+                    var record = CreateDatabaseRecord(obj);
+                    var tableNames = record["_tableNames"] as IEnumerable<string>;
+                    InvokeSaveInterceptors(tableNames, record);
+                    records.Add(record);
                     index++;
                 } // end foreach
 
@@ -969,29 +899,6 @@ namespace XRepository {
                 Executor.Dispose();
             } // end try-finally
         } // end method
-
-
-
-        public Sequencer Sequencer {
-            get {
-                var dbExec = Executor as DatabaseExecutor;
-                if (dbExec == null)
-                    return null;
-
-                if (dbExec.Sequencer == null) {
-                    dbExec.Sequencer = new Sequencer(openConnection);
-                    var tableDef = Executor.GetTableDefinition("Sequencer");
-                    if (tableDef != null)
-                        dbExec.Sequencer.BackingTableName = tableDef.FullName;
-                } // end if
-                return dbExec.Sequencer;
-            } // end get
-            set {
-                var dbExec = Executor as DatabaseExecutor;
-                if (dbExec != null && value != null)
-                    dbExec.Sequencer = value;
-            } // end set
-        } // end property
 
 
 
