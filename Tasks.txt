@@ -1,9 +1,9 @@
-o Implement Interceptors (for security) for NRepository and JSRepository
 o Finish Beta web site
 o Move client-server databases to another computer
 o Setup and test databases...
     - Sybase
     - Teradata
+	- Cassandra
 o Implement Producer / Consumer for reads and writes
 o Figure out how to make Categorized Lookup Tables work with References
 o See if its possible to specify columns instead of using SELECT *

@@ -947,7 +947,8 @@ namespace XRepository {
                 if (id == null)
                     continue;
 
-                if (idObjectMap[reference.ReferencedType].ContainsKey(id)) {
+                if (idObjectMap.ContainsKey(reference.ReferencedType) &&
+                    idObjectMap[reference.ReferencedType].ContainsKey(id)) {
                     object referencedObj = idObjectMap[reference.ReferencedType][id];
                     reference.ValueProperty.SetValue(obj, referencedObj, null);
                 } // end if

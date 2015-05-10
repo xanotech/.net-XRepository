@@ -256,6 +256,26 @@ namespace XRepository {
 
 
 
+        protected void AttemptTransaction(Action<IDbTransaction> action) {
+            IDbTransaction transaction = null;
+            try {
+                transaction = Connection.BeginTransaction();
+            } catch {
+                // Do nothing.  Some databases don't support transactions (like Informix)
+            } // end try-catch
+
+            try {
+                action(transaction);
+                if (transaction != null)
+                    transaction.Commit();
+            } finally {
+                if (transaction != null)
+                    transaction.Dispose();
+            } // end try-finally
+        } // end method
+
+
+
         protected static void CheckForConnectionLeaks(int seconds) {
             if (!Debugger.IsAttached)
                 return;
@@ -804,7 +824,8 @@ namespace XRepository {
                 LogCommand(cmd);
             } else {
                 cmd = createCmdFunc();
-                cmd.Transaction = transaction;
+                if (transaction != null)
+                    cmd.Transaction = transaction;
                 cmd.Prepare();
                 commandMap[tableNamesKey] = cmd;
             } // end if-else
@@ -932,7 +953,7 @@ namespace XRepository {
 
 
         public override void Remove(BlockingCollection<IRecord> records) {
-            using (var transaction = Connection.BeginTransaction()) {
+            AttemptTransaction(transaction => {
                 // Used for storing prepared statements to be used repeatedly
                 var cmdMap = new Dictionary<string, IDbCommand>();
                 try {
@@ -969,15 +990,13 @@ namespace XRepository {
                     foreach (var cmd in cmdMap.Values)
                         cmd.Dispose();
                 } // end try-finally
-
-                transaction.Commit();
-            } // end using
+            });
         } // end method
 
 
 
         public override void Save(BlockingCollection<IRecord> records) {
-            using (var transaction = Connection.BeginTransaction()) {
+            AttemptTransaction(transaction => {
                 // Used for storing prepared statements to be used repeatedly
                 var countCmdMap = new Dictionary<string, IDbCommand>();
                 var insertCmdMap = new Dictionary<string, IDbCommand>();
@@ -1035,9 +1054,7 @@ namespace XRepository {
                     foreach (var cmd in updateCmdMap.Values)
                         cmd.Dispose();
                 } // end try-finally
-
-                transaction.Commit();
-            } // end using
+            });
         } // end method
 
 
