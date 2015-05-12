@@ -41,7 +41,9 @@ namespace XRepository {
         public string Count(string tableNames, string cursor) {
             var tableNamesEnum = ParseTableNames(tableNames);
             var cursorData = JsonConvert.DeserializeObject<CursorData>(cursor);
+            ParseCriteriaValues(cursorData.criteria);
             InvokeCountInterceptors(tableNamesEnum, cursorData.criteria);
+
             var count = Executor.Count(tableNamesEnum, cursorData.criteria);
             return JsonConvert.SerializeObject(count);
         } // end method
@@ -99,10 +101,11 @@ namespace XRepository {
         public string Fetch(string tableNames, string cursor) {
             var tableNamesEnum = ParseTableNames(tableNames);
             var cursorData = JsonConvert.DeserializeObject<CursorData>(cursor);
+            ParseCriteriaValues(cursorData.criteria);
+            InvokeFindInterceptors(tableNamesEnum, cursorData.criteria);
 
             var objectValuesList = new List<IRecord>();
             var objects = new BlockingCollection<IRecord>();
-            InvokeFindInterceptors(tableNamesEnum, cursorData.criteria);
             Executor.Fetch(tableNamesEnum, cursorData, objects);
             FixDates(objects);
             return JsonConvert.SerializeObject(objects);
@@ -179,7 +182,7 @@ namespace XRepository {
                 if (!processedColumns.ContainsKey(propertyName) || processedColumns[propertyName])
                     continue;
 
-                JArray jArray = property.Value as JArray;
+                var jArray = property.Value as JArray;
                 if (jArray == null)
                     values[property.Key] = (property.Value as JValue).Value;
                 else {
@@ -213,6 +216,25 @@ namespace XRepository {
 
 
 
+        protected void ParseCriteriaValues(IEnumerable<Criterion> criteria) {
+            foreach (var criterion in criteria) {
+                var jArray = criterion.Value as JArray;
+                if (jArray != null) {
+                    object[] array = new object[jArray.Count];
+                    int a = 0;
+                    foreach (var jTok in jArray)
+                        array[a++] = (jTok as JValue).Value;
+                    criterion.Value = array;
+                } // end if
+
+                var jVal = criterion.Value as JValue;
+                if (jVal != null)
+                    criterion.Value = jVal.Value;
+            } // end foreach
+        } // end method
+
+
+
         protected IEnumerable<string> ParseTableNames(string tableNames) {
             var tableNamesList = new List<string>();
             if (string.IsNullOrEmpty(tableNames))
@@ -221,7 +243,7 @@ namespace XRepository {
             if (jTok.Type == JTokenType.String)
                 tableNamesList.Add(jTok.Value<string>());
             else if (jTok.Type == JTokenType.Array)
-                foreach (JToken tableNameElement in jTok) {
+                foreach (var tableNameElement in jTok) {
                     if (tableNameElement.Type != JTokenType.String)
                         throw new FormatException("The tableNames parameter contained an " +
                             "element that was not a string (json = " + jTok.ToString() + ").");
@@ -241,7 +263,7 @@ namespace XRepository {
         public void Remove(string data) {
             var records = new BlockingCollection<IRecord>();
             var jObjList = CreateJObjectList(JToken.Parse(data));
-            foreach (JObject jObj in jObjList) {
+            foreach (var jObj in jObjList) {
                 var record = CreateDatabaseRecord(jObj);
                 var tableNames = record["_tableNames"] as IEnumerable<string>;
                 InvokeRemoveInterceptors(tableNames, record);

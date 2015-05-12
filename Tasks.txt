@@ -1,5 +1,6 @@
+o Add support for passing in array-only values without specifying the primary key
+o Test support for array-only values and empty arrays
 o Finish Beta web site
-o Move client-server databases to another computer
 o Setup and test databases...
     - Sybase
     - Teradata

@@ -226,13 +226,17 @@ namespace XRepository {
             var whereAdded = false;
             foreach (var criterion in criteria) {
                 var schemaRow = GetSchemaTableRow(tableNames, criterion.Name);
-                var table = GetTableForColumn(tableNames, criterion.Name);
+                var tableName = GetTableForColumn(tableNames, criterion.Name);
                 sql.Append(Environment.NewLine);
                 sql.Append(whereAdded ? "AND " : "WHERE ");
-                if (schemaRow == null || table == null)
+
+                var vals = criterion.GetValues();
+                if (schemaRow == null || tableName == null)
                     sql.Append(criterion.Name.ToSqlString() + " = 'does not map to a column'");
+                else if (vals != null && !vals.Any())
+                    sql.Append(criterion.Name.ToSqlString() + " IN ('contains no values')");
                 else
-                    sql.Append(table + '.' + criterion.ToString(true, cmd, schemaRow));
+                    sql.Append(tableName + '.' + criterion.ToString(true, cmd, schemaRow));
                 whereAdded = true;
             } // end foreach
             cmd.CommandText += sql;
@@ -296,6 +300,29 @@ namespace XRepository {
                         string.Join(Environment.NewLine, info.SqlLog) + nl +
                         "NRepository.CreationStack..." + nl +
                         info.RepositoryCreationStack);
+        } // end method
+
+
+
+        private bool CheckBoolAllowed(string tableName) {
+            bool isBoolAllowed = true;
+            var tableDef = GetTableDefinition(tableName);
+            using (var cmd = Connection.CreateCommand())
+                try {
+                    cmd.AddParameter("TrueBool", true);
+                    cmd.AddParameter("FalseBool", false);
+
+                    cmd.CommandText = "SELECT * FROM " + tableDef.FullName + Environment.NewLine +
+                        "WHERE " + cmd.FormatParameter("TrueBool") + " = " + cmd.FormatParameter("FalseBool");
+                    Log(cmd.CommandText);
+                    cmd.ExecuteNonQuery();
+                } catch {
+                    // This exception most likely occurs when the database does not support booleans.
+                    // This happens in old, slow-to-adapt databases like Oracle and DB2. Oddly,
+                    // Informix actually supports bools.  Go figure.
+                    isBoolAllowed = false;
+                } // end try-catch
+            return isBoolAllowed;
         } // end method
 
 
@@ -402,6 +429,8 @@ namespace XRepository {
             if (!tableNames.Any())
                 throw new ArgumentException("The tableNames parameter was empty.", "tableNames");
 
+            FixBools(tableNames.First(), cursorData.criteria);
+
             var cmd = Connection.CreateCommand();
             try {
                 AddSelectClause(cmd, tableNames, countOnly);
@@ -430,7 +459,7 @@ namespace XRepository {
                 throw new DataException("The table \"" + tableName +
                     "\" is ambiguous because it is defined in multiple database schemas (" +
                     string.Join(", ", records.Select(record => record["TABLE_SCHEMA"])) +
-                    ").  Use the Repository.Map method to explicitly define how " +
+                    ").  Use the MapTable method to explicitly define how " +
                     tableName + " maps to the database.");
             } // end else-if
 
@@ -569,9 +598,9 @@ namespace XRepository {
                 "INNER JOIN SYSCAT.TABCONST TC" + Environment.NewLine +
                 "ON TC.CONSTNAME = KCU.CONSTNAME" + Environment.NewLine +
                 "WHERE TC.TYPE = 'P'" + Environment.NewLine +
-                "AND UPPER(TRIM(KCU.TABNAME)) = " + tableDef.TableName.ToSqlString();
+                "AND UPPER(TRIM(KCU.TABNAME)) = " + tableDef.TableName.ToUpper().ToSqlString();
             if (!string.IsNullOrEmpty(tableDef.SchemaName))
-                sql += Environment.NewLine + "AND UPPER(TRIM(KCU.TABSCHEMA)) = " + tableDef.SchemaName.ToSqlString();
+                sql += Environment.NewLine + "AND UPPER(TRIM(KCU.TABSCHEMA)) = " + tableDef.SchemaName.ToUpper().ToSqlString();
             sql += Environment.NewLine + "ORDER BY KCU.COLNAME";
             Log(sql);
             var results = Connection.ExecuteReader(sql);
@@ -598,7 +627,7 @@ namespace XRepository {
                 "cl.colno = i.part13 OR cl.colno = i.part14 OR" + Environment.NewLine +
                 "cl.colno = i.part15 OR cl.colno = i.part16)" + Environment.NewLine +
                 "WHERE cn.constrtype = 'P'" + Environment.NewLine +
-                "AND UPPER(t.tabname) = " + tableName.ToUpper().ToSqlString() + Environment.NewLine +
+                "AND UPPER(t.tabname) = " + tableName.ToSqlString() + Environment.NewLine +
                 "ORDER BY cl.colname";
             Log(sql);
             var results = Connection.ExecuteReader(sql);
@@ -627,7 +656,7 @@ namespace XRepository {
                 "ON acc.constraint_name = ac.constraint_name" + Environment.NewLine +
                 "AND acc.owner = ac.owner" + Environment.NewLine +
                 "WHERE ac.constraint_type = 'P'" + Environment.NewLine +
-                "AND acc.table_name = " + tableName.ToUpper().ToSqlString() + Environment.NewLine +
+                "AND UPPER(acc.table_name) = " + tableName.ToSqlString() + Environment.NewLine +
                 "ORDER BY acc.table_name";
             Log(sql);
             var results = Connection.ExecuteReader(sql);
@@ -659,9 +688,9 @@ namespace XRepository {
                 "AND (tc.table_name = kcu.table_name OR" + Environment.NewLine +
                 "(tc.table_name IS NULL AND kcu.table_name IS NULL))" + Environment.NewLine +
                 "WHERE tc.constraint_type = 'PRIMARY KEY'" + Environment.NewLine +
-                "AND UPPER(kcu.table_name) = " + tableDef.TableName.ToSqlString();
+                "AND UPPER(kcu.table_name) = " + tableDef.TableName.ToUpper().ToSqlString();
             if (!string.IsNullOrEmpty(tableDef.SchemaName))
-                sql += Environment.NewLine + "AND UPPER(kcu.table_schema) = " + tableDef.SchemaName.ToSqlString();
+                sql += Environment.NewLine + "AND UPPER(kcu.table_schema) = " + tableDef.SchemaName.ToUpper().ToSqlString();
             sql += Environment.NewLine + "ORDER BY kcu.column_name";
             Log(sql);
             var results = Connection.ExecuteReader(sql);
@@ -777,6 +806,60 @@ namespace XRepository {
                     splitTableName.First().ToSqlString();
             Log(sql);
             return CreateTableDefinition(Connection.ExecuteReader(sql));
+        } // end method
+
+
+
+        internal void FixBools(IEnumerable<IRecord> records) {
+            if (!records.Any())
+                return;
+            string tableName = (records.First()["_tableNames"] as IEnumerable<string>).First();
+            if (IsBoolAllowed(tableName))
+                return;
+
+            foreach (var record in records) {
+                var newBoolVals = new Record();
+                foreach (var key in record.Keys) {
+                    var boolVal = record[key] as bool?;
+                    if (boolVal != null)
+                        newBoolVals[key] = boolVal.Value ? 1 : 0;
+                } // end foreach
+
+                foreach (var key in newBoolVals.Keys)
+                    record[key] = newBoolVals[key];
+            } // end foreach
+        } // end method
+
+
+
+        internal void FixBools(string tableName, IEnumerable<Criterion> criteria) {
+            if (IsBoolAllowed(tableName) || criteria == null)
+                return;
+
+            foreach (var criterion in criteria) {
+                if (criterion.Value == null)
+                    continue;
+
+                var vals = criterion.GetValues();
+                if (vals != null) {
+                    var isBoolPresent = false;
+                    var newVals = new List<object>();
+                    foreach(var val in vals) {
+                        var boolVal = val as bool?;
+                        if (boolVal != null) {
+                            newVals.Add(boolVal.Value ? 1 : 0);
+                            isBoolPresent = true;
+                        } else
+                            newVals.Add(val);
+                    } // end foreach
+                    if (isBoolPresent)
+                        criterion.Value = newVals;
+                } else {
+                    var boolVal = criterion.Value as bool?;
+                    if (boolVal != null)
+                        criterion.Value = boolVal.Value ? 1 : 0;
+                } // end if-else
+            } // end foreach
         } // end method
 
 
@@ -928,6 +1011,18 @@ namespace XRepository {
 
 
 
+        public virtual bool IsBoolAllowed(string tableName) {
+            if (tableName == null)
+                throw new ArgumentNullException("tableName", "The tableName parameter was null.");
+
+            var info = infoCache[Connection.ConnectionString];
+            if (info.isBoolAllowed == null)
+                info.isBoolAllowed = CheckBoolAllowed(tableName);
+            return info.isBoolAllowed.Value;
+        } // end method
+
+
+
         private Action<string> log;
         public Action<string> Log {
             get {
@@ -953,6 +1048,8 @@ namespace XRepository {
 
 
         public override void Remove(BlockingCollection<IRecord> records) {
+            FixBools(records);
+
             AttemptTransaction(transaction => {
                 // Used for storing prepared statements to be used repeatedly
                 var cmdMap = new Dictionary<string, IDbCommand>();
@@ -996,12 +1093,14 @@ namespace XRepository {
 
 
         public override void Save(BlockingCollection<IRecord> records) {
-            AttemptTransaction(transaction => {
-                // Used for storing prepared statements to be used repeatedly
-                var countCmdMap = new Dictionary<string, IDbCommand>();
-                var insertCmdMap = new Dictionary<string, IDbCommand>();
-                var updateCmdMap = new Dictionary<string, IDbCommand>();
-                try {
+            FixBools(records);
+
+            // Used for storing prepared statements to be used repeatedly
+            var countCmdMap = new Dictionary<string, IDbCommand>();
+            var insertCmdMap = new Dictionary<string, IDbCommand>();
+            var updateCmdMap = new Dictionary<string, IDbCommand>();
+            try {
+                AttemptTransaction(transaction => {
                     foreach (var record in records) {
                         var tableNames = record["_tableNames"] as IEnumerable<string>;
                         if (tableNames == null)
@@ -1046,15 +1145,15 @@ namespace XRepository {
                             } // end if-else
                         } // end foreach
                     } // end foreach
-                } finally {
-                    foreach (var cmd in countCmdMap.Values)
-                        cmd.Dispose();
-                    foreach (var cmd in insertCmdMap.Values)
-                        cmd.Dispose();
-                    foreach (var cmd in updateCmdMap.Values)
-                        cmd.Dispose();
-                } // end try-finally
-            });
+                });
+            } finally {
+                foreach (var cmd in countCmdMap.Values)
+                    cmd.Dispose();
+                foreach (var cmd in insertCmdMap.Values)
+                    cmd.Dispose();
+                foreach (var cmd in updateCmdMap.Values)
+                    cmd.Dispose();
+            } // end try-finally
         } // end method
 
 
