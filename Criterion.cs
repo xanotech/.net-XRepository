@@ -221,21 +221,6 @@ namespace XRepository {
 
 
 
-        internal IEnumerable GetValues() {
-            var enumerable = Value as IEnumerable;
-
-            // Strings implement IEnumerable so make sure that if Value
-            // is null to set the returned enumerable to null
-            // as it would be for other basic data types.
-            var valStr = Value as string;
-            if (valStr != null)
-                enumerable = null;
-
-            return enumerable;
-        } // end method
-
-
-
         private string FormatValueList(IEnumerable enumerable, bool useParameters, IDbCommand cmd, DataRow schemaRow) {
             var isAfterFirst = false;
             var valueCount = 0;
@@ -265,6 +250,35 @@ namespace XRepository {
             } // end foreach
             sql.Append(")");
             return sql.ToString();
+        } // end method
+
+
+
+        internal static IEnumerable GetBasicEnumerable(object values) {
+            var enumerable = values as IEnumerable;
+            if (enumerable == null)
+                return null;
+            
+            foreach (var item in enumerable)
+                if (!item.GetType().IsBasic())
+                    return null;
+
+            return enumerable;
+        } // end method
+
+
+
+        internal IEnumerable GetValues() {
+            var enumerable = Value as IEnumerable;
+
+            // Strings implement IEnumerable so make sure that if Value
+            // is null to set the returned enumerable to null
+            // as it would be for other basic data types.
+            var valStr = Value as string;
+            if (valStr != null)
+                enumerable = null;
+
+            return enumerable;
         } // end method
 
 

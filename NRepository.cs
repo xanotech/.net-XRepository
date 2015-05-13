@@ -85,23 +85,12 @@ namespace XRepository {
 
 
         public long Count<T>(object criteria) where T : new() {
-            if (criteria == null || criteria.GetType().IsBasic()) try {
-                var type = typeof(T);
-                var idProperty = GetIdProperty(type);
-                if (idProperty == null) {
-                    var value = "" + criteria;
-                    if (type == typeof(string) || type == typeof(DateTime) || type == typeof(DateTime?))
-                        value = '"' + value + '"';
-                    else if (type == typeof(char) || type == typeof(char?))
-                        value = "'" + value + "'";
-                    throw new DataException("Repository.Count<T>(" + value + ") method cannot be used for " +
-                        type.FullName + " because does not have a single column primary key or " +
-                        "it doesn't have a property that corresponds to the primary key.");
-                } // end if
-                return Count<T>(new Criterion(idProperty.Name, "=", criteria));
-            } finally {
-                Executor.Dispose();
-            } // end try-finally
+            long? count = null;
+            ProcessBasicCriteria<T>(criteria, "Count", crit => {
+                count = Count<T>(crit);
+            });
+            if (count != null)
+                return count.Value;
 
             var criterion = criteria as Criterion;
             if (criterion != null)
@@ -362,23 +351,12 @@ namespace XRepository {
 
 
         public Cursor<T> Find<T>(object criteria) where T : new() {
-            if (criteria == null || criteria.GetType().IsBasic()) try {
-                var type = typeof(T);
-                var idProperty = GetIdProperty(type);
-                if (idProperty == null) {
-                    var value = "" + criteria;
-                    if (type == typeof(string) || type == typeof(DateTime) || type == typeof(DateTime?))
-                        value = '"' + value + '"';
-                    else if (type == typeof(char) || type == typeof(char?))
-                        value = "'" + value + "'";
-                    throw new DataException("Repository.Find<T>(" + value + ") method cannot be used for " +
-                        type.FullName + " because does not have a single column primary key or " +
-                        "it doesn't have a property that corresponds to the primary key.");
-                } // end if
-                return Find<T>(new Criterion(idProperty.Name, "=", criteria));
-            } finally {
-                Executor.Dispose();
-            } // end try-finally
+            Cursor<T> cursor = null;
+            ProcessBasicCriteria<T>(criteria, "Find", crit => {
+                cursor = Find<T>(crit);
+            });
+            if (cursor != null)
+                return cursor;
 
             var criterion = criteria as Criterion;
             if (criterion != null)
@@ -802,6 +780,35 @@ namespace XRepository {
                     dbExec.MaxParameters = value;
             } // end set
         } // end property
+
+
+
+        public void ProcessBasicCriteria<T>(object criteria, string methodName, Action<Criterion> callback) {
+            var basicEnumerable = Criterion.GetBasicEnumerable(criteria);
+            if (criteria != null && !criteria.GetType().IsBasic() && basicEnumerable == null)
+                return;
+            
+            try {
+                var type = typeof(T);
+                var idProperty = GetIdProperty(type);
+                if (idProperty == null) {
+                    var valueStr = basicEnumerable != null ? "[list-of-values]" : "" + criteria;
+
+                    if (criteria is string || criteria is DateTime || criteria is DateTime?)
+                        valueStr = '"' + valueStr + '"';
+                    else if (criteria is char || criteria is char?)
+                        valueStr = "'" + valueStr + "'";
+
+                    throw new DataException("Repository." + methodName + "<T>(" +
+                        valueStr + ") method cannot be used for " + type.FullName +
+                        " because does not have a single column primary key or " +
+                        "it doesn't have a property that corresponds to the primary key.");
+                } // end if
+                callback(new Criterion(idProperty.Name, "=", criteria));
+            } finally {
+                Executor.Dispose();
+            } // end try-finally
+        } // end method
 
 
 

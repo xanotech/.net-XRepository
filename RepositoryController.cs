@@ -14,22 +14,28 @@ namespace XRepository {
 
         private static IDictionary<string, Func<IDbConnection>> connectionFuncs = new Dictionary<string, Func<IDbConnection>>();
 
-        private static ConcurrentSet<Type> pendingInterceptorTypes = new ConcurrentSet<Type>();
+        private static Cache<string, ConcurrentSet<Type>> pendingInterceptorTypes =
+            new Cache<string, ConcurrentSet<Type>>(s => new ConcurrentSet<Type>());
 
 
 
         private WebRepositoryAdapter adapter;
         public WebRepositoryAdapter Adapter {
             get {
-                if (adapter == null) {
-                    var key = ControllerContext.RouteData.Values["controller"].ToString();
-                    adapter = new WebRepositoryAdapter(connectionFuncs[key]);
-                } // end if
-                if (pendingInterceptorTypes.Any()) {
-                    foreach (var type in pendingInterceptorTypes)
+                var path = ControllerContext.HttpContext.Request.AppRelativeCurrentExecutionFilePath;
+                var splitPath = path.Split('/');
+                path = splitPath[splitPath.Length - 2];
+
+                if (adapter == null)
+                    adapter = new WebRepositoryAdapter(connectionFuncs[path]);
+
+                var interceptorTypes = pendingInterceptorTypes[path];
+                if (interceptorTypes.Any()) {
+                    foreach (var type in interceptorTypes)
                         adapter.RegisterInterceptor(type);
-                    pendingInterceptorTypes.Clear();
+                    interceptorTypes.Clear();
                 } // end if
+
                 return adapter;
             } // end get
             protected set {
@@ -95,18 +101,18 @@ namespace XRepository {
 
 
 
-        public static void RegisterInterceptor(Type interceptorType) {
-            pendingInterceptorTypes.TryAdd(interceptorType);
+        public static void RegisterInterceptor(Type interceptorType, string path = "Repository") {
+            pendingInterceptorTypes[path].TryAdd(interceptorType);
         } // end method
 
 
 
-        public static void RegisterInterceptors(Assembly assembly) {
+        public static void RegisterInterceptors(Assembly assembly, string path = "Repository") {
             if (assembly == null)
                 throw new ArgumentNullException("assembly");
 
             foreach (var type in assembly.GetTypes())
-                RegisterInterceptor(type);
+                RegisterInterceptor(type, path);
         } // end method
 
         
@@ -131,38 +137,38 @@ namespace XRepository {
 
 
 
-        public static void Setup(Func<IDbConnection> openConnectionFunc, string url = "Repository") {
-            SetupRoute(url);
-            connectionFuncs[url] = openConnectionFunc;
+        public static void Setup(Func<IDbConnection> openConnectionFunc, string path = "Repository") {
+            SetupRoute(path);
+            connectionFuncs[path] = openConnectionFunc;
         } // end method
 
 
 
-        public static void Setup<T>(string connectionString, string url = "Repository")
+        public static void Setup<T>(string connectionString, string path = "Repository")
             where T : IDbConnection, new() {
-            Setup(() => DataTool.OpenConnection<T>(connectionString), url);
+            Setup(() => DataTool.OpenConnection<T>(connectionString), path);
         } // end method
 
 
 
-        public static void Setup(string connectionStringName, string url = "Repository") {
-            Setup(() => DataTool.OpenConnection(connectionStringName), url);
+        public static void Setup(string connectionStringName, string path = "Repository") {
+            Setup(() => DataTool.OpenConnection(connectionStringName), path);
         } // end method
 
 
 
-        private static void SetupRoute(string url) {
-            if (url.Contains("{action}"))
+        private static void SetupRoute(string path) {
+            if (path.Contains("{action}"))
                 throw new ArgumentException("The parameter cannot contain \"{action}\" " +
-                    "because all requests must route to the appropriate actions within RepositoryController.", "url");
+                    "because all requests must route to the appropriate actions within RepositoryController.", "path");
 
-            if (url.Contains("{controller}"))
+            if (path.Contains("{controller}"))
                 throw new ArgumentException("The parameter cannot contain \"{controller}\" " +
-                    "because all requests must route to the RepositoryController.", "url");
+                    "because all requests must route to the RepositoryController.", "path");
 
-            url = url.Trim('/');
-            RouteTable.Routes.MapRoute("RepositoryController@" + url,
-                url + "/{action}", new { controller = "Repository" });
+            path = path.Trim('/');
+            RouteTable.Routes.MapRoute("RepositoryController@" + path,
+                path + "/{action}", new { controller = "Repository" });
         } // end method
 
     } // end class
