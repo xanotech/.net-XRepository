@@ -1,5 +1,4 @@
-o Add support for passing in array-only values without specifying the primary key
-o Test support for array-only values and empty arrays
+o Add logic to ensure that objects passed to save or remove contain necessary primary keys
 o Finish Beta web site
 o Setup and test databases...
     - Sybase
