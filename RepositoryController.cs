@@ -14,6 +14,8 @@ namespace XRepository {
 
         private static IDictionary<string, Func<IDbConnection>> connectionFuncs = new Dictionary<string, Func<IDbConnection>>();
 
+        private static IDictionary<string, Type> executorTypes = new Dictionary<string, Type>();
+
         private static Cache<string, ConcurrentSet<Type>> pendingInterceptorTypes =
             new Cache<string, ConcurrentSet<Type>>(s => new ConcurrentSet<Type>());
 
@@ -28,6 +30,9 @@ namespace XRepository {
 
                 if (adapter == null)
                     adapter = new WebRepositoryAdapter(connectionFuncs[path]);
+
+                if (executorTypes.ContainsKey(path))
+                    adapter.ExecutorType = executorTypes[path];
 
                 var interceptorTypes = pendingInterceptorTypes[path];
                 if (interceptorTypes.Any()) {
@@ -134,6 +139,18 @@ namespace XRepository {
             get { return Adapter.Sequencer; }
             set { Adapter.Sequencer = value; }
         } // end property
+
+
+
+        public static void SetExecutorType<T>(string path = "Repository") {
+            SetExecutorType(typeof(T), path);
+        } // end property
+
+
+
+        public static void SetExecutorType(Type type, string path = "Repository") {
+            executorTypes[path] = type;
+        } // end method
 
 
 
