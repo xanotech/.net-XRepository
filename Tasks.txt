@@ -1,6 +1,8 @@
 o Add logic to remove properties that are not Basic when saving
 o Add logic to ensure that objects passed to save or remove contain necessary primary keys
 o Finish Beta web site
+	- Explicit Mapping
+	- Referencial Relationships
 o Setup and test databases...
     - Sybase
     - Teradata

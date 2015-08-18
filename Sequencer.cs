@@ -200,15 +200,16 @@ namespace XRepository {
 
         public bool IsBackingTablePresent {
             get {
-                if (isBackingTablePresent != null)
-                    return isBackingTablePresent.Value;
+                if (isBackingTablePresent == null)
+                lock (this)
+                if (isBackingTablePresent == null) {
+                    var schema = GetBackingTableSchema();
+                    isBackingTablePresent = schema != null;
 
-                var schema = GetBackingTableSchema();
-                isBackingTablePresent = schema != null;
-
-                if (isBackingTablePresent.Value) {
-                    ValidateBackingTableSchema(schema);
-                    ValidateLocking();
+                    if (isBackingTablePresent.Value) {
+                        ValidateBackingTableSchema(schema);
+                        ValidateLocking();
+                    } // end if
                 } // end if
 
                 return isBackingTablePresent.Value;
