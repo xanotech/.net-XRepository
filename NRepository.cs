@@ -946,6 +946,16 @@ namespace XRepository {
 
 
 
+        private void SetReferences(IEnumerable objs) {
+            var type = objs.GetType().GetGenericArguments()[0];
+            var references = GetReferences(type);
+            SetMultipleReferences(objs, references);
+            FindReferenceIds(objs, references);
+            SetSingleReferences(objs, references);
+        } // end method
+
+
+
         private void SetSingleReferences(IEnumerable objs, IEnumerable<Reference> references) {
             foreach (var obj in objs)
             foreach (var reference in references)
@@ -960,16 +970,6 @@ namespace XRepository {
                     reference.ValueProperty.SetValue(obj, referencedObj, null);
                 } // end if
             } // end for-each
-        } // end method
-
-
-
-        private void SetReferences(IEnumerable objs) {
-            var type = objs.GetType().GetGenericArguments()[0];
-            var references = GetReferences(type);
-            SetMultipleReferences(objs, references);
-            FindReferenceIds(objs, references);
-            SetSingleReferences(objs, references);
         } // end method
 
 
