@@ -1,4 +1,5 @@
 o Update AutoScript
+o Make ExecutorType cached so that it only needs to be set once and fix OleDbCsv test (N only)
 o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
 o "ignore" functionality so that particular columns can be ignored (JS only)
 o Support operations by tablename only (no entities, just DTOs) (JS only)
@@ -9,7 +10,7 @@ o Make OleDbExecutor threadsafe
 o Finish .NET Getting Started documentation
 	- Interceptors
 	- Primary Keys / Sequencer
-o Finish JS Getting Started
+o Finish JS Getting Started documentation
 o Setup and test databases...
     - Sybase
     - Teradata
