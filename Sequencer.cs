@@ -20,6 +20,11 @@ namespace XRepository {
 
 
 
+        public Sequencer() : this((string)null) {
+        } // end constructor
+        
+        
+        
         public Sequencer(Func<IDbConnection> openConnection) {
             this.openConnection = openConnection;
             this.sequences = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
@@ -34,7 +39,11 @@ namespace XRepository {
         ///   </param>
         /// </summary>
         public Sequencer(string connectionStringName) :
-            this(() => { return DataTool.OpenConnection(connectionStringName); }) {
+            this(() => {
+                if (string.IsNullOrEmpty(connectionStringName))
+                    return null;
+                return DataTool.OpenConnection(connectionStringName);
+            }) {
         } // end constructor
 
 
@@ -71,17 +80,21 @@ namespace XRepository {
             if (string.IsNullOrWhiteSpace(BackingTableName))
                 return null;
 
-            using (var con = openConnection())
-            using (var cmd = con.CreateCommand()) {
-                cmd.CommandText = "SELECT * FROM " + BackingTableName + " WHERE 1 = 0";
-                try {
-                    using (var dr = cmd.ExecuteReader())
-                        return dr.GetSchemaTable();
-                } catch (DbException) {
-                    // This exception most likely occurs when the table does not exist.
-                    // Simply return null indicating that the table does not exist.
+            using (var con = openConnection()) {
+                if (con == null)
                     return null;
-                } // end try-catch
+
+                using (var cmd = con.CreateCommand()) {
+                    cmd.CommandText = "SELECT * FROM " + BackingTableName + " WHERE 1 = 0";
+                    try {
+                        using (var dr = cmd.ExecuteReader())
+                            return dr.GetSchemaTable();
+                    } catch (DbException) {
+                        // This exception most likely occurs when the table does not exist.
+                        // Simply return null indicating that the table does not exist.
+                        return null;
+                    } // end try-catch
+                } // end using
             } // end using
         } // end method
 
@@ -100,11 +113,14 @@ namespace XRepository {
         ///   The maximum value of the column in the table
         ///   or 0 if the value is null or a non-integer.
         /// </returns>
-        private long GetMaxValue(IDbCommand command, string table, string column) {
+        protected virtual long GetMaxValue(IDbCommand command, string table, string column) {
             if (command == null)
-                using (var con = openConnection())
-                using (var cmd = con.CreateCommand())
-                    return GetMaxValue(cmd, table, column);
+                using (var con = openConnection()) {
+                    if (con == null)
+                        return 0;
+                    using (var cmd = con.CreateCommand())
+                        return GetMaxValue(cmd, table, column);
+                } // end using
 
             command.CommandText = "SELECT MAX(" + column + ") FROM " + table;
             object result = command.ExecuteScalar();
@@ -131,7 +147,7 @@ namespace XRepository {
         /// <returns>
         ///   The next value in the specified sequence.
         /// </returns>
-        public long GetNextValues(string table, string column, int increaseBy) {
+        public virtual long GetNextValues(string table, string column, int increaseBy) {
             if (increaseBy < 1)
                 throw new ArgumentException("The increaesBy parameter must be greater than 0.", "increaseBy");
 
@@ -198,7 +214,7 @@ namespace XRepository {
 
 
 
-        public bool IsBackingTablePresent {
+        public virtual bool IsBackingTablePresent {
             get {
                 if (isBackingTablePresent == null)
                 lock (this)
@@ -218,21 +234,39 @@ namespace XRepository {
 
 
 
+        private string lockKey;
+        private string LockKey {
+            get {
+                if (lockKey != null)
+                    return lockKey;
+
+                var now = DateTime.UtcNow;
+                lockKey = "Sequencer.LockKey:" + (now.Date - now).Milliseconds;
+                return lockKey;
+            } // end get
+        } // get method
+
+
+
         private void SetupValidateLockingRecord() {
             using (var con = openConnection())
             using (var cmd = con.CreateCommand()) {
+                /*
                 cmd.CommandText = "DELETE FROM " + BackingTableName + Environment.NewLine +
-                    "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
-                    "AND ColumnName = " + cmd.FormatParameter("ColumnName");
-                cmd.AddParameter("TableName", "<Sequencer.ValidateLocking>");
-                cmd.AddParameter("ColumnName", "<Sequencer.ValidateLocking>");
+                    "WHERE TableName LIKE " + cmd.FormatParameter("TableName") + Environment.NewLine +
+                    "AND ColumnName LIKE " + cmd.FormatParameter("ColumnName");
+                cmd.AddParameter("TableName", "Sequencer.LockKey:%");
+                cmd.AddParameter("ColumnName", "Sequencer.LockKey:%");
                 cmd.ExecuteNonQuery();
+                */
 
                 cmd.CommandText = "INSERT INTO " + BackingTableName + Environment.NewLine +
                     "(TableName, ColumnName, SequenceValue)" + Environment.NewLine +
                     "VALUES (" + cmd.FormatParameter("TableName") + ", " +
                     cmd.FormatParameter("ColumnName") + ", " +
                     cmd.FormatParameter("SequenceValue") + ")";
+                cmd.AddParameter("TableName", LockKey);
+                cmd.AddParameter("ColumnName", LockKey);
                 cmd.AddParameter("SequenceValue", 0);
                 cmd.ExecuteNonQuery();
             } // end using
@@ -270,11 +304,11 @@ namespace XRepository {
 
             using (var con = openConnection())
             using (var cmd = con.CreateCommand()) {
-                cmd.AddParameter("TableName", "<Sequencer.ValidateLocking>");
-                cmd.AddParameter("ColumnName", "<Sequencer.ValidateLocking>");
+                cmd.AddParameter("TableName", LockKey);
+                cmd.AddParameter("ColumnName", LockKey);
 
                 var thread = new Thread(() => {
-                    GetNextValues("<Sequencer.ValidateLocking>", "<Sequencer.ValidateLocking>", 1);
+                    GetNextValues(LockKey, LockKey, 1);
                 });
                 using (var transaction = con.BeginTransaction()) {
                     cmd.CommandText = "UPDATE " + BackingTableName + Environment.NewLine +
@@ -321,8 +355,8 @@ namespace XRepository {
                 cmd.CommandText = "SELECT COUNT(*) FROM " + BackingTableName + Environment.NewLine +
                     "WHERE TableName = " + cmd.FormatParameter("TableName") + Environment.NewLine +
                     "AND ColumnName = " + cmd.FormatParameter("ColumnName");
-                cmd.AddParameter("TableName", "<Sequencer.ValidateLocking>");
-                cmd.AddParameter("ColumnName", "<Sequencer.ValidateLocking>");
+                cmd.AddParameter("TableName", LockKey);
+                cmd.AddParameter("ColumnName", LockKey);
                 var count = cmd.ExecuteScalar();
                 exists = (DataTool.AsLong(count) ?? 0) == 1;
                 Thread.Sleep(50);

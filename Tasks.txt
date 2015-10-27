@@ -1,17 +1,24 @@
-o Add logic to remove properties that are not Basic when saving
-o Add logic to ensure that objects passed to save or remove contain necessary primary keys
-o Finish Beta web site
-	- Explicit Mapping
-	- Referencial Relationships
+o Update AutoScript
+o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
+o "ignore" functionality so that particular columns can be ignored (JS only)
+o Support operations by tablename only (no entities, just DTOs) (JS only)
+o See if its possible to specify columns instead of using SELECT *
+o Remove properties that are not Basic when saving
+o Ensure that objects passed to save or remove contain necessary primary keys
+o Make OleDbExecutor threadsafe
+o Finish .NET Getting Started documentation
+	- Interceptors
+	- Primary Keys / Sequencer
+o Finish JS Getting Started
 o Setup and test databases...
     - Sybase
     - Teradata
 	- Cassandra
 o Implement Producer / Consumer for reads and writes
 o Figure out how to make Categorized Lookup Tables work with References
-o See if its possible to specify columns instead of using SELECT *
 o Implement Transaction capability to NRepository and JSRepository
-o Document methods in XTools and XRepository (both .NET and JavaScript)
+o Document methods in XTools and XRepository (N and JS)
+o Autogenerate API documentation on web site (N and JS)
 o Automate NuGet packages for NRepository and JSRepository
 o Change BackgroundTaskQueue (or is it BackgroundJobQueue?) to use BlockingCollection
 o Create a generic UserController based on wheresmylinks user code
