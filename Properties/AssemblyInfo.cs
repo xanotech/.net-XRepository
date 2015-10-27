@@ -5,5 +5,5 @@
 [assembly: AssemblyCopyright("© 2015 Xanotech LLC")]
 [assembly: AssemblyProduct("XRepository")]
 
-[assembly: AssemblyFileVersion("0.9")]
-[assembly: AssemblyVersion("0.9")]
+[assembly: AssemblyFileVersion("0.10")]
+[assembly: AssemblyVersion("0.10")]
