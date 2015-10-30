@@ -135,7 +135,7 @@ namespace XRepository {
 
 
 
-        public Sequencer Sequencer {
+        public virtual Sequencer Sequencer {
             get { return Adapter.Sequencer; }
             set { Adapter.Sequencer = value; }
         } // end property

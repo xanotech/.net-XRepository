@@ -1158,7 +1158,7 @@ namespace XRepository {
 
 
 
-        public Sequencer Sequencer {
+        public virtual Sequencer Sequencer {
             get {
                 var info = infoCache[Connection.ConnectionString];
                 return info.sequencer;

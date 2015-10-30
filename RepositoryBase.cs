@@ -182,7 +182,7 @@ namespace XRepository {
 
         
         
-        public Sequencer Sequencer {
+        public virtual Sequencer Sequencer {
             get {
                 var dbExec = Executor as DatabaseExecutor;
                 if (dbExec == null)
