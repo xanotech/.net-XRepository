@@ -1,6 +1,4 @@
-o Straighten out all releases including source code
-o Change all id attributes from MixedCase to camelCase
-o Join by property name instead of just prefetched objects (N and JS)
+o Join by property name instead of just prefetched objects (JS only)
 o Make ExecutorType cached so that it only needs to be set once and fix OleDbCsv test (N only)
 o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
 o "ignore" functionality so that particular columns can be ignored (JS only)

@@ -11,16 +11,16 @@ namespace XRepository {
         // data and fetch are closely related.  data is essentially initialized
         // the the results of fetch whenever results need to be pulled.
         private IList<T> data;
-        private Func<Cursor<T>, IEnumerable[], IEnumerable<T>> fetch;
+        private Func<Cursor<T>, IEnumerable<IEnumerable>, IEnumerable<T>> fetch;
 
         private NRepository repository; // Only used for Count.
 
-        private IEnumerable[] joinObjects; // Passed to fetch, received from Join method.
+        private IEnumerable<IEnumerable> joinObjects; // Passed to fetch, received from Join method.
 
 
 
         internal Cursor(IEnumerable<Criterion> criteria,
-            Func<Cursor<T>, IEnumerable[], IEnumerable<T>> fetchFunc,
+            Func<Cursor<T>, IEnumerable<IEnumerable>, IEnumerable<T>> fetchFunc,
             NRepository repository) {
             if (fetchFunc == null)
                 throw new ArgumentNullException("fetchFunc", "The fetchFunc parameter is null.");

@@ -3,12 +3,9 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.Common;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
-using System.Text;
-using System.Web;
 using XTools;
 
 namespace XRepository {
@@ -298,11 +295,13 @@ namespace XRepository {
 
 
 
-        protected IEnumerable<T> Fetch<T>(Cursor<T> cursor, IEnumerable[] joinObjects)
+        protected IEnumerable<T> Fetch<T>(Cursor<T> cursor, IEnumerable<IEnumerable> joinObjects)
             where T : new() {
             bool wasNull = idObjectMap == null;
-            if (wasNull)
+            if (wasNull) {
                 idObjectMap = new Dictionary<Type, IDictionary<object, object>>();
+                joinObjectMap = new Dictionary<Type, IDictionary<object, object>>();
+            } // end if
 
             try {
                 if (IsUsingLikeForEquals)
@@ -316,8 +315,8 @@ namespace XRepository {
                         MapObject(id, obj, idObjectMap);
                 } // end foreach
 
-                if (joinObjectMap == null)
-                    InitObjectMaps(joinObjects);
+                joinObjects = FetchStringJoins<T>(objs, joinObjects);
+                MapObjects(joinObjects);
                 SetReferences(objs);
 
                 return objs;
@@ -329,6 +328,71 @@ namespace XRepository {
 
                 Executor.Dispose();
             } // end try-finally
+        } // end method
+
+
+
+        private IEnumerable<IEnumerable> FetchStringJoins<T>(IEnumerable<T> objs,
+            IEnumerable<IEnumerable> joinObjects) {
+            if (joinObjects == null)
+                return null;
+
+            var references = GetReferences(typeof(T));
+
+            // Initialize newJoinObjects as all non-string joinObjects.
+            var newJoinObjects = joinObjects.Where(jo => (jo as string) == null).ToList();
+
+            // Holds all populated joins that are strings.
+            var joinStrings = joinObjects.Select(jo => jo as string)
+                .Where(js => !string.IsNullOrEmpty(js)).OrderBy(js => js);
+            
+            // Holds all "primary" properties mentioned by join strings.
+            // Join strings may take the form "PrimaryProperty.SecondarProperty...".
+            // The keys of propertyMap are the primary properties.  The values
+            // are the joins without the primary portion and will be passed
+            // to the find operation for the primary property.
+            var propertyMap = new Dictionary<string, IList<string>>();
+            foreach (var str in joinStrings) {
+                var split = str.Split('.');
+                var property = split.First();
+                if (!propertyMap.ContainsKey(property))
+                    propertyMap[property] = new List<string>();
+                var remainder = str.Substring(property.Length);
+                
+                // If the remainder (what is left after removing the primary property)
+                // has any value, remove the first character (which should be a '.').
+                if (!string.IsNullOrEmpty(remainder))
+                    remainder = remainder.Substring(1);
+
+                // If the remainder still has a value after removing the '.',
+                // then its a valid secondary+ property.
+                if (!string.IsNullOrEmpty(remainder))
+                    propertyMap[property].Add(remainder);
+            } // end foreach
+
+            foreach (var property in propertyMap.Keys) {
+                var reference = references.FirstOrDefault(r => r.ValueProperty.Name == property);
+                if (reference == null)
+                    continue;
+
+                var joinsForFind = new List<IEnumerable>(newJoinObjects);
+                joinsForFind.AddRange(propertyMap[property]);
+
+                IEnumerable results;
+                var criterion = new Criterion();
+                criterion.Operation = Criterion.OperationType.EqualTo;
+                if (reference.IsMultiple) {
+                    criterion.Name = reference.KeyProperty.Name;
+                    criterion.Value = objs.Select(o => GetId(o));
+                } else {
+                    criterion.Name = GetPrimaryKeys(reference.ReferencedType).FirstOrDefault();
+                    criterion.Value = objs.Select(o => reference.KeyProperty.GetValue(o, null)).Where(id => id != null);
+                } // end if-else
+                results = ReflectedFind(reference.ReferencedType, new[] {criterion}, joinsForFind.ToArray()) as IEnumerable;
+                results.GetEnumerator(); // Forces fetching
+                newJoinObjects.Add(results);
+            } // end foreach
+            return newJoinObjects;
         } // end method
 
 
@@ -640,25 +704,6 @@ namespace XRepository {
 
 
 
-        private void InitObjectMaps(IEnumerable[] joinObjects) {
-            if (joinObjectMap != null)
-                return;
-
-            joinObjectMap = new Dictionary<Type, IDictionary<object, object>>();
-
-            if (joinObjects == null)
-                return;
-
-            foreach (var joinObjEnum in joinObjects)
-            foreach (var obj in joinObjEnum) {
-                var id = GetId(obj);
-                if (id != null)
-                    MapObject(id, obj, idObjectMap, joinObjectMap);
-            } // end foreach
-        } // end method
-
-
-
         protected bool IsIdNeeded(object obj, string baseTableName) {
             if (Sequencer == null)
                 return false;
@@ -707,6 +752,22 @@ namespace XRepository {
                 } // end foreach
                 type = type.BaseType;
             } // end while
+        } // end method
+
+
+
+        private void MapObjects(IEnumerable<IEnumerable> objects) {
+            if (objects == null)
+                return;
+
+            objects = objects.Except(objects.Where(jo => (jo as string) != null));
+
+            foreach (var joinObjEnum in objects)
+            foreach (var obj in joinObjEnum) {
+                var id = GetId(obj);
+                if (id != null)
+                    MapObject(id, obj, idObjectMap, joinObjectMap);
+            } // end foreach
         } // end method
 
 
@@ -813,10 +874,22 @@ namespace XRepository {
 
 
         private object ReflectedFind(Type type, object criteria) {
+            return ReflectedFind(type, criteria, null);
+        } // end method
+
+
+
+        private object ReflectedFind(Type type, object criteria, IEnumerable[] joinObjects) {
             var mirror = mirrorCache[GetType()];
             var method = mirror.GetMethod("Find", new[] {typeof(object)});
             method = method.MakeGenericMethod(type);
-            return method.Invoke(this, new[] {criteria});
+            var cursor = method.Invoke(this, new[] {criteria});
+            if (joinObjects != null) {
+                mirror = mirrorCache[cursor.GetType()];
+                method = mirror.GetMethod("Join", new[] {typeof(IEnumerable[])});
+                method.Invoke(cursor, new[] {joinObjects});
+            } // end if
+            return cursor;
         } // end method
 
 
