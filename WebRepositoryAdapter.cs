@@ -217,6 +217,9 @@ namespace XRepository {
 
 
         protected void ParseCriteriaValues(IEnumerable<Criterion> criteria) {
+            if (criteria == null)
+                return;
+
             foreach (var criterion in criteria) {
                 var jArray = criterion.Value as JArray;
                 if (jArray != null) {
