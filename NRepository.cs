@@ -195,30 +195,8 @@ namespace XRepository {
         private IEnumerable<T> CreateObjects<T>(IEnumerable<IRecord> records,
             CursorData cursorData) where T : new() {
             var objs = new List<T>();
-            var recordNum = 0;
-            var recordStart = cursorData.skip ?? 0;
-            var recordStop = cursorData.limit != null ? recordStart + cursorData.limit : null;
-
-            foreach (var record in records) {
-                // Create objects if the pagingMechanism is not Programatic or
-                // (if it is) and recordNum is on or after recordStart and
-                // before recordStop.  recordStop is null if cursor.limit
-                // is null and in that case, use recordNum + 1 so that the record
-                // always results in CreateObject (since cursor.limit wasn't specified).
-                if (cursorData.pagingMechanism != DatabaseExecutor.PagingMechanism.Programmatic ||
-                    recordNum >= recordStart &&
-                    recordNum < (recordStop ?? (recordNum + 1)))
-                    objs.Add(CreateObject<T>(record));
-                    
-                recordNum++;
-
-                // Stop iterating if the pagingMechanism is null or Programmatic,
-                // recordStop is defined, and recordNum is on or after recordStop.
-                if ((cursorData.pagingMechanism == null ||
-                    cursorData.pagingMechanism == DatabaseExecutor.PagingMechanism.Programmatic) &&
-                    recordStop != null && recordNum >= recordStop)
-                    break;
-            } // end while
+            foreach (var record in records)
+                objs.Add(CreateObject<T>(record));
             return objs;
         } // end method
 
@@ -552,11 +530,20 @@ namespace XRepository {
         private IEnumerable<string> FindTableNames(Type type) {
             var tableNameList = new List<string>();
             while (type != typeof(object)) {
-                var tableDef = Executor.GetTableDefinition(type.Name);
-                if (tableDef != null)
+                try {
+                    var tableDef = Executor.GetTableDefinition(type.Name);
                     tableNameList.Add(tableDef.FullName);
+                } catch (DataException) {
+                    // GetTableDefinition throws DataExceptions when the table
+                    // indicated by type.Name does not exist.  In those cases,
+                    // catch the exception and move on.  FindTableNames will
+                    // throw an exception if no tables are found.
+                } // end try-catch
                 type = type.BaseType;
             } // end while
+            if (!tableNameList.Any())
+                throw new DataException("There are no tables associated with \"" + type.FullName + "\".");
+
             tableNameList.Reverse();
             return tableNameList;
         } // end method
@@ -670,15 +657,12 @@ namespace XRepository {
 
 
 
-        public IEnumerable<string> GetTableNames(Type type, bool isSilent = false) {
+        public IEnumerable<string> GetTableNames(Type type) {
             if (type == null)
                 throw new ArgumentNullException("type", "The type parameter was null.");
 
             var info = infoCache[ConnectionString];
-            var tableNames = info.tableNamesCache.GetValue(type, FindTableNames);
-            if (!tableNames.Any() && !isSilent)
-                throw new DataException("There are no tables associated with \"" + type.FullName + "\".");
-            return tableNames;
+            return info.tableNamesCache.GetValue(type, FindTableNames);
         } // end method
 
 
@@ -812,15 +796,23 @@ namespace XRepository {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
-            var tableDef = Executor.GetTableDefinition(tableName);
-            if (tableDef == null)
-                throw new DataException("The table \"" + tableName + "\" is not a valid table.");
+            Executor.GetTableDefinition(tableName); // Validates passed tableName
 
             var info = infoCache[ConnectionString];
             var tableNames = new List<string>();
             var baseType = type.BaseType;
-            if (baseType != typeof(object))
-                tableNames.AddRange(GetTableNames(baseType, true));
+
+            // Try to add table names associated with the baseType (assuming the
+            // baseType isn't Object) to the tableNames to be put in the cache.
+            try {
+                if (baseType != typeof(object))
+                    tableNames.AddRange(GetTableNames(baseType));
+            } catch (DataException) {
+                // GetTableNames throws an exception if the type passed has no
+                // associated tables.  In this case, we can ignore this exception
+                // since base types do not need to have backing tables.
+            } // end try-catch
+
             tableNames.Add(tableName);
             info.tableNamesCache.PutValue(type, tableNames);
         } // end method

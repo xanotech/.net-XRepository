@@ -72,7 +72,7 @@ namespace XRepository {
 
                 if (lastTableName != null) {
                     if (primaryKeys.Count != lastPrimaryKeys.Count || primaryKeys.Count == 0)
-                        throw new DataException("Primary keys must be defined for and match across " +
+                        throw new MissingPrimaryKeyException("Primary keys must be defined for and match across " +
                             "parent and child tables for objects with inherritance (parent table: " +
                             lastTableName + " / child table: " + tableName + ").");
 
@@ -83,7 +83,7 @@ namespace XRepository {
                     else
                         for (int pk = 0; pk < primaryKeys.Count; pk++) {
                             if (primaryKeys[pk] != lastPrimaryKeys[pk])
-                                throw new DataException("Primary keys must exactly match across " +
+                                throw new MissingPrimaryKeyException("Primary keys must exactly match across " +
                                     "parent and child tables for objects with inherritance " +
                                     "(parent table keys: " + string.Join(", ", primaryKeys) +
                                     " / child table keys: " + string.Join(", ", lastPrimaryKeys) + ").");
@@ -145,15 +145,13 @@ namespace XRepository {
 
 
         protected virtual void AddPagingClause(IDbCommand cmd, string tableName, CursorData cursorData) {
-            if (cursorData.limit == null && cursorData.skip == null)
-                return;
-
-            cursorData.pagingMechanism = GetPagingMechanism(tableName);
-            if (cursorData.pagingMechanism == PagingMechanism.Programmatic)
+            var pagingMechanism = GetPagingMechanism(tableName);
+            if ((cursorData.limit == null && cursorData.skip == null) ||
+                pagingMechanism == PagingMechanism.Programmatic)
                 return;
 
             string pagingClause = null;
-            if (cursorData.pagingMechanism == PagingMechanism.LimitOffset) {
+            if (pagingMechanism == PagingMechanism.LimitOffset) {
                 var parts = new List<string>(2);
                 if (cursorData.limit != null)
                     parts.Add("LIMIT " + cursorData.limit);
@@ -162,7 +160,7 @@ namespace XRepository {
                 pagingClause = string.Join(" ", parts);
             } // end if
 
-            if (cursorData.pagingMechanism == PagingMechanism.OffsetFetchFirst) {
+            if (pagingMechanism == PagingMechanism.OffsetFetchFirst) {
                 var parts = new List<string>(3);
                 if (cursorData.sort == null || cursorData.sort.Count == 0) {
                     var firstColumn = GetSchemaTable(tableName).Rows[0]["ColumnName"];
@@ -456,7 +454,7 @@ namespace XRepository {
                 return null;
             else if (count > 1) {
                 var tableName = records.First()["table_name"];
-                throw new DataException("The table \"" + tableName +
+                throw new DuplicateNameException("The table \"" + tableName +
                     "\" is ambiguous because it is defined in multiple database schemas (" +
                     string.Join(", ", records.Select(record => record["TABLE_SCHEMA"])) +
                     ").  Use the MapTable method to explicitly define how " +
@@ -530,14 +528,30 @@ namespace XRepository {
 
         public override void Fetch(IEnumerable<string> tableNames, CursorData cursorData,
             BlockingCollection<IRecord> records) {
+            var pagingMechanism = GetPagingMechanism(tableNames.First());
+            var recordNum = 0;
+            var recordStart = cursorData.skip ?? 0;
+            var recordStop = cursorData.limit != null ? recordStart + cursorData.limit : null;
+
             var splits = cursorData.SplitLargeCollections(MaxParameters);
             foreach (var split in splits) {
                 using (var cmd = CreateSelectCommand(tableNames, split, false))
                 using (var reader = cmd.ExecuteReader())
-                foreach (var record in reader.ReadData()) {
+                foreach (var record in reader.ReadData())
+                if (pagingMechanism != DatabaseExecutor.PagingMechanism.Programmatic ||
+                    recordNum >= recordStart &&
+                    recordNum < (recordStop ?? (recordNum + 1))) {
                     record["_tableNames"] = tableNames;
                     records.Add(record);
-                } // end foreach
+                    recordNum++;
+
+                    // Stop iterating if the pagingMechanism is null or Programmatic,
+                    // recordStop is defined, and recordNum is on or after recordStop.
+                    if ((pagingMechanism == null ||
+                        pagingMechanism == DatabaseExecutor.PagingMechanism.Programmatic) &&
+                        recordStop != null && recordNum >= recordStop)
+                        break;
+                } // end if
             } // end foreach
         } // end method
 
@@ -721,18 +735,24 @@ namespace XRepository {
 
 
         private TableDefinition FindTableDefinition(string tableName) {
+            TableDefinition tableDef = null;
             try {
-                return FindTableDefinitionWithInformationSchema(tableName);
+                tableDef = FindTableDefinitionWithInformationSchema(tableName);
             } catch (DbException ex) {
+                var throwOriginal = false;
                 string exName = ex.GetType().Name.Remove("Exception");
                 try {
-                    var def = HandleException<TableDefinition>("FindTableDefinition", exName, tableName);
-                    return def;
+                    tableDef = HandleException<TableDefinition>("FindTableDefinition", exName, tableName);
                 } catch (MissingMethodException) {
                     // Swallow the MissingMethodException and just throw the original
+                    throwOriginal = true;
                 } // end try-catch
-                throw;
+                if (throwOriginal)
+                    throw;
             } // end try-catch
+            if (tableDef == null)
+                throw new DataException("The table \"" + tableName + "\" is not a valid table.");
+            return tableDef;
         } // end method
 
 

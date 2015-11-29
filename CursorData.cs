@@ -8,7 +8,6 @@ namespace XRepository {
 
         // Used by the spawning repository for populating data.
         public IEnumerable<Criterion> criteria;
-        public DatabaseExecutor.PagingMechanism? pagingMechanism;
 
         // The following values hold the underlying values for
         // the limit, skip, and sort methods / properties.

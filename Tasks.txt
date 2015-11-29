@@ -1,4 +1,7 @@
 o Join by property name instead of just prefetched objects (JS only)
+o Add the rest of the databases for JSRepository testing (JS only)
+    - Fix Sqlite dates
+	- Figure out MaxParameters (for SqlServerCompact)
 o Contemplate changing Criterion Name, Operation, and Value to lower-case (JS only)
 o Make ExecutorType cached so that it only needs to be set once and fix OleDbCsv test (N only)
 o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
@@ -9,6 +12,7 @@ o Remove properties that are not Basic when saving
 o Ensure that objects passed to save or remove contain necessary primary keys
 o Make OleDbExecutor threadsafe
 o Finish .NET Getting Started documentation
+	- Criteria Logic: how to do AND and OR
 	- Interceptors
 	- Primary Keys / Sequencer
 o Finish JS Getting Started documentation
