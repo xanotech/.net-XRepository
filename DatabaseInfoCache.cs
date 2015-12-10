@@ -7,6 +7,8 @@ using XTools;
 namespace XRepository {
     class DatabaseInfoCache {
         internal bool? isBoolAllowed;
+        internal Action<string> log;
+        internal int maxParameters;
         internal DatabaseExecutor.PagingMechanism? pagingMechanism;
         internal Sequencer sequencer;
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
@@ -14,10 +15,11 @@ namespace XRepository {
 
         private static IDictionary<string, Func<IDbConnection>> connectionFuncs = new Dictionary<string, Func<IDbConnection>>();
 
-        private static IDictionary<string, Type> executorTypes = new Dictionary<string, Type>();
-
         private static Cache<string, ConcurrentSet<Type>> pendingInterceptorTypes =
             new Cache<string, ConcurrentSet<Type>>(s => new ConcurrentSet<Type>());
+
+        private static ConcurrentDictionary<string, RepositoryControllerSettings> settingsMap =
+            new ConcurrentDictionary<string, RepositoryControllerSettings>();
 
 
 
@@ -31,8 +33,22 @@ namespace XRepository {
                 if (adapter == null)
                     adapter = new WebRepositoryAdapter(connectionFuncs[path]);
 
-                if (executorTypes.ContainsKey(path))
-                    adapter.ExecutorType = executorTypes[path];
+                RepositoryControllerSettings settings;
+                if (settingsMap.TryGetValue(path, out settings)) {
+                    if (settings.ExecutorType != null)
+                        adapter.ExecutorType = settings.ExecutorType;
+                    
+                    if (settings.MaxParameters != null)
+                        adapter.MaxParameters = settings.MaxParameters.Value;
+
+                    if (settings.Log != null)
+                        adapter.Log = settings.Log;
+                    
+                    if (settings.Sequencer != null)
+                        adapter.Sequencer = settings.Sequencer;
+
+                    settingsMap.TryRemove(path);
+                } // end if
 
                 var interceptorTypes = pendingInterceptorTypes[path];
                 if (interceptorTypes.Any()) {
@@ -60,13 +76,6 @@ namespace XRepository {
             base.Dispose(disposing);
             Adapter.Dispose();
         } // end method
-
-
-
-        public Type ExecutorType {
-            get { return Adapter.ExecutorType; }
-            set { Adapter.ExecutorType = value; }
-        } // end property
 
 
 
@@ -135,41 +144,23 @@ namespace XRepository {
 
 
 
-        public virtual Sequencer Sequencer {
-            get { return Adapter.Sequencer; }
-            set { Adapter.Sequencer = value; }
-        } // end property
-
-
-
-        public static void SetExecutorType<T>(string path = "Repository") {
-            SetExecutorType(typeof(T), path);
-        } // end property
-
-
-
-        public static void SetExecutorType(Type type, string path = "Repository") {
-            executorTypes[path] = type;
-        } // end method
-
-
-
-        public static void Setup(Func<IDbConnection> openConnectionFunc, string path = "Repository") {
+        public static RepositoryControllerSettings Setup(Func<IDbConnection> openConnectionFunc, string path = "Repository") {
             SetupRoute(path);
             connectionFuncs[path] = openConnectionFunc;
+            return (settingsMap[path] = new RepositoryControllerSettings());
         } // end method
 
 
 
-        public static void Setup<T>(string connectionString, string path = "Repository")
+        public static RepositoryControllerSettings Setup<T>(string connectionString, string path = "Repository")
             where T : IDbConnection, new() {
-            Setup(() => DataTool.OpenConnection<T>(connectionString), path);
+            return Setup(() => DataTool.OpenConnection<T>(connectionString), path);
         } // end method
 
 
 
-        public static void Setup(string connectionStringName, string path = "Repository") {
-            Setup(() => DataTool.OpenConnection(connectionStringName), path);
+        public static RepositoryControllerSettings Setup(string connectionStringName, string path = "Repository") {
+            return Setup(() => DataTool.OpenConnection(connectionStringName), path);
         } // end method
 
 

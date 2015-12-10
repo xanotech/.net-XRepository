@@ -532,7 +532,8 @@ namespace XRepository {
             while (type != typeof(object)) {
                 try {
                     var tableDef = Executor.GetTableDefinition(type.Name);
-                    tableNameList.Add(tableDef.FullName);
+                    if (tableDef != null)
+                        tableNameList.Add(tableDef.FullName);
                 } catch (DataException) {
                     // GetTableDefinition throws DataExceptions when the table
                     // indicated by type.Name does not exist.  In those cases,
@@ -796,7 +797,11 @@ namespace XRepository {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
-            Executor.GetTableDefinition(tableName); // Validates passed tableName
+            // Call GetTableDefinition and if it returns null, throw a DataException.
+            // GetTableDefinition should throw an exception, but since it can be
+            // overridden, also check for returned null values.
+            if (Executor.GetTableDefinition(tableName) == null)
+                throw new DataException("The table \"" + tableName + "\" is not a valid table.");
 
             var info = infoCache[ConnectionString];
             var tableNames = new List<string>();
@@ -816,23 +821,6 @@ namespace XRepository {
             tableNames.Add(tableName);
             info.tableNamesCache.PutValue(type, tableNames);
         } // end method
-
-
-
-        public int MaxParameters {
-            get {
-                var dbExec = Executor as DatabaseExecutor;
-                if (dbExec == null)
-                    return default(int);
-
-                return dbExec.MaxParameters;
-            } // end get
-            set {
-                var dbExec = Executor as DatabaseExecutor;
-                if (dbExec != null && value != default(int))
-                    dbExec.MaxParameters = value;
-            } // end set
-        } // end property
 
 
 

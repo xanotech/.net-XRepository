@@ -1,13 +1,15 @@
-o Join by property name instead of just prefetched objects (JS only)
+o See if its possible to specify columns instead of using SELECT *
 o Add the rest of the databases for JSRepository testing (JS only)
-    - Fix Sqlite dates
-	- Figure out MaxParameters (for SqlServerCompact)
+	- DB2
+	- Informix
+	- Oracle
+	- PostgreSql
+o Join by property name instead of just prefetched objects (JS only)
 o Contemplate changing Criterion Name, Operation, and Value to lower-case (JS only)
 o Make ExecutorType cached so that it only needs to be set once and fix OleDbCsv test (N only)
 o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
 o "ignore" functionality so that particular columns can be ignored (JS only)
 o Support operations by tablename only (no entities, just DTOs) (JS only)
-o See if its possible to specify columns instead of using SELECT *
 o Remove properties that are not Basic when saving
 o Ensure that objects passed to save or remove contain necessary primary keys
 o Make OleDbExecutor threadsafe
@@ -17,9 +19,9 @@ o Finish .NET Getting Started documentation
 	- Primary Keys / Sequencer
 o Finish JS Getting Started documentation
 o Setup and test databases...
+	- Cassandra
     - Sybase
     - Teradata
-	- Cassandra
 o Implement Producer / Consumer for reads and writes
 o Figure out how to make Categorized Lookup Tables work with References
 o Implement Transaction capability to NRepository and JSRepository

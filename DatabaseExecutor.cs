@@ -252,8 +252,13 @@ namespace XRepository {
                 MaxParameters = 2090;
             else if (typeName == "System.Data.SQLite.SQLiteConnection")
                 MaxParameters = 999;
+            // The max for SQL Server CE is not "real", but practical.
+            // After more than 2000 parameters, performance goes WAY down.
+            // Also, if a query contains more than about 5000 parameters or so
+            // (which probably changes from system to system),
+            // queries produce a StackOverflowException which crashes the process.
             else if (typeName == "System.Data.SqlServerCe.SqlCeConnection")
-                MaxParameters = int.MaxValue;
+                MaxParameters = 2000;
         } // end method
 
 
@@ -347,6 +352,15 @@ namespace XRepository {
 
 
         protected ConnectionInfo ConnectionInfo { get; set; }
+
+
+
+        private string connectionString;
+        protected string ConnectionString {
+            get {
+                return connectionString = connectionString ?? Connection.ConnectionString;
+            } // end get
+        } // end property
 
 
 
@@ -907,7 +921,7 @@ namespace XRepository {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
-            var info = infoCache[Connection.ConnectionString];
+            var info = infoCache[ConnectionString];
             return info.columnsCache.GetValue(tableName.ToUpper(), FindColumns);
         } // end method
 
@@ -941,7 +955,7 @@ namespace XRepository {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
-            var info = infoCache[Connection.ConnectionString];
+            var info = infoCache[ConnectionString];
             if (info.pagingMechanism == null)
                 info.pagingMechanism = FindPagingMechanism(tableName);
             return info.pagingMechanism.Value;
@@ -968,7 +982,7 @@ namespace XRepository {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
-            var info = infoCache[Connection.ConnectionString];
+            var info = infoCache[ConnectionString];
             return info.primaryKeysCache.GetValue(tableName.ToUpper(), FindPrimaryKeys);
         } // end method
 
@@ -978,7 +992,7 @@ namespace XRepository {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
-            var info = infoCache[Connection.ConnectionString];
+            var info = infoCache[ConnectionString];
             return info.schemaTableCache.GetValue(tableName.ToUpper(), FindSchemaTable);
         } // end method
 
@@ -1000,7 +1014,7 @@ namespace XRepository {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
-            var info = infoCache[Connection.ConnectionString];
+            var info = infoCache[ConnectionString];
             return info.tableDefinitionCache.GetValue(tableName.ToUpper(), FindTableDefinition);
         } // end method
 
@@ -1035,7 +1049,7 @@ namespace XRepository {
             if (tableName == null)
                 throw new ArgumentNullException("tableName", "The tableName parameter was null.");
 
-            var info = infoCache[Connection.ConnectionString];
+            var info = infoCache[ConnectionString];
             if (info.isBoolAllowed == null)
                 info.isBoolAllowed = CheckBoolAllowed(tableName);
             return info.isBoolAllowed.Value;
@@ -1043,13 +1057,14 @@ namespace XRepository {
 
 
 
-        private Action<string> log;
         public Action<string> Log {
             get {
-                return log ?? DefaultLog;
+                var info = infoCache[ConnectionString];
+                return info.log ?? DefaultLog;
             } // end get
             set {
-                log = value;
+                var info = infoCache[ConnectionString];
+                info.log = value;
             } // end set
         } // end property
 
@@ -1063,7 +1078,16 @@ namespace XRepository {
 
 
 
-        public int MaxParameters { get; set; }
+        public virtual int MaxParameters {
+            get {
+                var info = infoCache[ConnectionString];
+                return info.maxParameters;
+            } // end get
+            set {
+                var info = infoCache[ConnectionString];
+                info.maxParameters = value;
+            } // end set
+        } // end property
 
 
 
@@ -1180,11 +1204,11 @@ namespace XRepository {
 
         public virtual Sequencer Sequencer {
             get {
-                var info = infoCache[Connection.ConnectionString];
+                var info = infoCache[ConnectionString];
                 return info.sequencer;
             } // end get
             set {
-                var info = infoCache[Connection.ConnectionString];
+                var info = infoCache[ConnectionString];
                 info.sequencer = value;
             } // end set
         } // end property

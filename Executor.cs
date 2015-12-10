@@ -31,5 +31,5 @@ namespace XRepository {
         public abstract TableDefinition GetTableDefinition(string tableName);
         public abstract void Remove(BlockingCollection<IRecord> data);
         public abstract void Save(BlockingCollection<IRecord> data);
-    } // end interface
+    } // end class
 } // end namespace

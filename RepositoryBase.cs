@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
 using System.Reflection;
@@ -9,6 +10,8 @@ namespace XRepository {
     using IRecord = IDictionary<string, object>;
 
     public class RepositoryBase {
+
+        private static ConcurrentDictionary<string, Type> executorTypeCache = new ConcurrentDictionary<string, Type>();
 
         private static Cache<string, ConcurrentSet<Type>> interceptorTypeCache =
             new Cache<string, ConcurrentSet<Type>>(s => new ConcurrentSet<Type>());
@@ -55,21 +58,13 @@ namespace XRepository {
 
 
 
-        private Type executorType;
         public Type ExecutorType {
             get {
-                if (executor != null)
-                    return executor.GetType();
-
-                return executorType;
+                return executorTypeCache.GetOrAdd(ConnectionString, typeof(DatabaseExecutor));
             } // end get
             set {
-                if (executor != null)
-                    return;
-
-                if (!typeof(Executor).IsAssignableFrom(value))
-                    value = null;
-                executorType = value;
+                if (typeof(Executor).IsAssignableFrom(value))
+                    executorTypeCache[ConnectionString] = value;
             } // end set
         } // end property
 
@@ -154,6 +149,22 @@ namespace XRepository {
 
 
 
+        public int MaxParameters {
+            get {
+                var dbExec = Executor as DatabaseExecutor;
+                if (dbExec == null)
+                    return default(int);
+                return dbExec.MaxParameters;
+            } // end get
+            set {
+                var dbExec = Executor as DatabaseExecutor;
+                if (dbExec != null && value != default(int))
+                    dbExec.MaxParameters = value;
+            } // end set
+        } // end property
+
+
+
         protected Func<IDbConnection> OpenConnection { get; set; }
         
         
@@ -190,9 +201,17 @@ namespace XRepository {
 
                 if (dbExec.Sequencer == null) {
                     dbExec.Sequencer = new Sequencer(OpenConnection);
-                    var tableDef = Executor.GetTableDefinition("Sequencer");
-                    if (tableDef != null)
-                        dbExec.Sequencer.BackingTableName = tableDef.FullName;
+
+                    // Try to get the table definition for Sequencer.  If it doesn't
+                    // exist (ie, DataException is thrown or returned tableDef is null),
+                    // then simply don't bother setting the BackingTableName.
+                    // The Sequencer will revert to using in-memory locking.
+                    try {
+                        var tableDef = Executor.GetTableDefinition("Sequencer");
+                        if (tableDef != null)
+                            dbExec.Sequencer.BackingTableName = tableDef.FullName;
+                    } catch (DataException) {
+                    } // end try-catch
                 } // end if
                 return dbExec.Sequencer;
             } // end get
