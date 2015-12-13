@@ -256,15 +256,32 @@ namespace XRepository {
         protected virtual IEnumerable<T> Fetch<T>(Cursor<T> cursor) where T : new() {
             var type = typeof(T);
 
-            // Clone cursor data and change sort columns to mapped database columns
+            // Clone cursor data (so the original remains untouched)
             var cursorData = cursor.CursorData.Clone();
-            var newSort = new Dictionary<string, int>();
+
+            // This next block of code 
+            var columns = new HashSet<string>();
+            var allColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            allColumns.UnionWith(GetTableNames(type).SelectMany(tn => Executor.GetColumns(tn)));
+            var mirror = mirrorCache[type];
+            var tableNames = GetTableNames(type);
+            foreach (var property in mirror.GetProperties()) {
+                if (!property.PropertyType.IsBasic())
+                    continue;
+
+                var column = GetMappedColumn(type, property.Name);
+                if (allColumns.Contains(column))
+                    columns.Add(column);
+            } // end foreach
+            cursorData.columns = columns;
+
+            // Change sort columns to mapped database columns
+            var sort = new Dictionary<string, int>();
             if (cursorData.sort != null)
                 foreach (var key in cursorData.sort.Keys)
-                    newSort[GetMappedColumn(type, key)] = cursorData.sort[key];
-            cursorData.sort = newSort;
+                    sort[GetMappedColumn(type, key)] = cursorData.sort[key];
+            cursorData.sort = sort;
 
-            var tableNames = GetTableNames(typeof(T));
             InvokeFindInterceptors(tableNames, cursorData.criteria);
             var objects = new BlockingCollection<IRecord>();
             Executor.Fetch(tableNames, cursorData, objects);

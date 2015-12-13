@@ -178,38 +178,38 @@ namespace XRepository {
 
 
 
-        protected virtual void AddSelectClause(IDbCommand cmd, IEnumerable<string> tableNames, bool countOnly) {
+        protected virtual void AddSelectClause(IDbCommand cmd,
+            IEnumerable<string> tableNames, bool countOnly, IEnumerable<string> columns) {
             //var mirror = mirrorCache[typeof(T)];
             if (countOnly)
                 cmd.CommandText = "SELECT COUNT(*) FROM ";
-            else {
+            else if (columns == null || !columns.Any())
                 cmd.CommandText = "SELECT * FROM ";
-                //var sql = new StringBuilder("SELECT ");
-                //bool isAfterFirst = false;
-                //var valuesOnLineCount = 0;
-                //foreach (var tableName in tableNames) {
-                //    var schema = GetSchemaTable(tableName);
-                //    for (int i = 0; i < schema.Rows.Count; i++) {
-                //        var column = (string)schema.Rows[i]["ColumnName"];
-                //        var prop = mirror.GetProperty(column, CaseInsensitiveBinding);
-                //        if (prop == null)
-                //            continue;
+            else {
+                var sql = new StringBuilder("SELECT ");
+                bool isAfterFirst = false;
+                var valuesOnLineCount = 0;
+                var columnSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                columnSet.UnionWith(columns);
+                foreach (var tableName in tableNames)
+                    foreach (var column in GetColumns(tableName)) {
+                        if (!columnSet.Contains(column))
+                            continue;
 
-                //        if (isAfterFirst) {
-                //            sql.Append(',');
-                //            if (valuesOnLineCount == 4) {
-                //                sql.Append(Environment.NewLine);
-                //                valuesOnLineCount = 0;
-                //            } else
-                //                sql.Append(' ');
-                //        } // end if
-                //        valuesOnLineCount++;
-                //        sql.Append(tableName + '.' + column);
-                //        isAfterFirst = true;
-                //    } // end if
-                //} // end foreach
-                //sql.Append(Environment.NewLine + "FROM ");
-                //cmd.CommandText = sql.ToString();
+                        if (isAfterFirst) {
+                            sql.Append(',');
+                            if (valuesOnLineCount == 4) {
+                                sql.Append(Environment.NewLine);
+                                valuesOnLineCount = 0;
+                            } else
+                                sql.Append(' ');
+                        } // end if
+                        valuesOnLineCount++;
+                        sql.Append(tableName + '.' + column);
+                        isAfterFirst = true;
+                    } // end foreach
+                sql.Append(Environment.NewLine + "FROM ");
+                cmd.CommandText = sql.ToString();
             } // end if-else
         } // end method
 
@@ -445,7 +445,7 @@ namespace XRepository {
 
             var cmd = Connection.CreateCommand();
             try {
-                AddSelectClause(cmd, tableNames, countOnly);
+                AddSelectClause(cmd, tableNames, countOnly, cursorData.columns);
                 AddFromClause(cmd, tableNames);
                 AddWhereClause(cmd, tableNames, cursorData.criteria);
                 AddOrderByClause(cmd, tableNames, cursorData.sort);

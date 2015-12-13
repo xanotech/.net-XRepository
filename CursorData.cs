@@ -6,6 +6,10 @@ using XTools;
 namespace XRepository {
     public class CursorData {
 
+        // Used for holding the columns to be fetched.
+        // If it is null or empty, "SELECT *" will be used.
+        public IEnumerable<string> columns;
+
         // Used by the spawning repository for populating data.
         public IEnumerable<Criterion> criteria;
 
