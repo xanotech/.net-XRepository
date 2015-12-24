@@ -259,12 +259,13 @@ namespace XRepository {
             // Clone cursor data (so the original remains untouched)
             var cursorData = cursor.CursorData.Clone();
 
-            // This next block of code 
+            // This next block of code populates columns based
+            // on the properties of T and their mapped column name.
             var columns = new HashSet<string>();
-            var allColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            allColumns.UnionWith(GetTableNames(type).SelectMany(tn => Executor.GetColumns(tn)));
-            var mirror = mirrorCache[type];
             var tableNames = GetTableNames(type);
+            var allColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            allColumns.UnionWith(tableNames.SelectMany(tn => Executor.GetColumns(tn)));
+            var mirror = mirrorCache[type];
             foreach (var property in mirror.GetProperties()) {
                 if (!property.PropertyType.IsBasic())
                     continue;
