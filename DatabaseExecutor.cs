@@ -934,7 +934,7 @@ namespace XRepository {
             if (commandMap.ContainsKey(tableNamesKey)) {
                 cmd = commandMap[tableNamesKey];
                 foreach (IDbDataParameter parameter in cmd.Parameters)
-                    parameter.Set(record[parameter.ParameterName]);
+                    parameter.Set(record[parameter.ParameterName], true);
 
                 // Only explicity log here (when the command exists after parameters
                 // are set) because createCmdFunc already logs the command.
