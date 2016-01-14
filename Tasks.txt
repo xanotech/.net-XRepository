@@ -1,11 +1,5 @@
-o Make JSRepository pass column names if objects have properties
-o Move "_private" methods to _internal object
-o Add the rest of the databases for JSRepository testing (JS only)
-	- DB2
-	- Informix
-	- Oracle
-	- PostgreSql
 o Join by property name instead of just prefetched objects (JS only)
+o Move "_private" methods to _internal object
 o Contemplate changing Criterion Name, Operation, and Value to lower-case (JS only)
 o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
 o "ignore" functionality so that particular columns can be ignored (JS only)

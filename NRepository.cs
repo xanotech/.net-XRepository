@@ -305,14 +305,10 @@ namespace XRepository {
 
                 var objs = Fetch(cursor);
 
-                foreach (var obj in objs) {
-                    var id = GetId(obj);
-                    if (id != null)
-                        MapObject(id, obj, idObjectMap);
-                } // end foreach
+                MapObjects(objs);
 
                 joinObjects = FetchStringJoins<T>(objs, joinObjects);
-                MapObjects(joinObjects);
+                MapJoinObjects(joinObjects);
                 SetReferences(objs);
 
                 return objs;
@@ -741,35 +737,45 @@ namespace XRepository {
 
 
 
+        private void MapJoinObjects(IEnumerable<IEnumerable> joinObjects) {
+            if (joinObjects == null)
+                return;
+
+            joinObjects = joinObjects.Except(joinObjects.Where(jo => (jo as string) != null));
+
+            foreach (var ienum in joinObjects) {
+                MapObjects(ienum);
+                MapObjects(ienum, joinObjectMap);
+            } // end foreach
+        } // end method
+
+
+
         private void MapObject(object id, object obj,
-            params IDictionary<Type, IDictionary<object, object>>[] maps) {
+            IDictionary<Type, IDictionary<object, object>> map = null) {
             var type = obj.GetType();
             if (!GetTableNames(type).Any())
                 return;
 
+            if (map == null)
+                map = idObjectMap;
+
             while (type != typeof(object)) {
-                foreach (var map in maps) {
-                    if (!map.ContainsKey(type))
-                        map[type] = new Dictionary<object, object>();
-                    map[type][id] = obj;
-                } // end foreach
+                if (!map.ContainsKey(type))
+                    map[type] = new Dictionary<object, object>();
+                map[type][id] = obj;
                 type = type.BaseType;
             } // end while
         } // end method
 
 
 
-        private void MapObjects(IEnumerable<IEnumerable> objects) {
-            if (objects == null)
-                return;
-
-            objects = objects.Except(objects.Where(jo => (jo as string) != null));
-
-            foreach (var joinObjEnum in objects)
-            foreach (var obj in joinObjEnum) {
+        private void MapObjects(IEnumerable objects,
+            IDictionary<Type, IDictionary<object, object>> map = null) {
+            foreach (var obj in objects) {
                 var id = GetId(obj);
                 if (id != null)
-                    MapObject(id, obj, idObjectMap, joinObjectMap);
+                    MapObject(id, obj, map);
             } // end foreach
         } // end method
 
