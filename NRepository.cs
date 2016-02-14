@@ -303,15 +303,15 @@ namespace XRepository {
                 if (IsUsingLikeForEquals)
                     cursor.CursorData.criteria = SwitchEqualsToLike(cursor.CursorData.criteria);
 
-                var objs = Fetch(cursor);
+                var objects = Fetch(cursor);
 
-                MapObjects(objs);
+                MapObjects(objects);
 
-                joinObjects = FetchStringJoins<T>(objs, joinObjects);
+                joinObjects = FetchStringJoins<T>(objects, joinObjects);
                 MapJoinObjects(joinObjects);
-                SetReferences(objs);
+                SetReferences(objects);
 
-                return objs;
+                return objects;
             } finally {
                 if (wasNull) {
                     idObjectMap = null;
@@ -324,7 +324,7 @@ namespace XRepository {
 
 
 
-        private IEnumerable<IEnumerable> FetchStringJoins<T>(IEnumerable<T> objs,
+        private IEnumerable<IEnumerable> FetchStringJoins<T>(IEnumerable<T> objects,
             IEnumerable<IEnumerable> joinObjects) {
             if (joinObjects == null)
                 return null;
@@ -375,10 +375,10 @@ namespace XRepository {
                 criterion.Operation = Criterion.OperationType.EqualTo;
                 if (reference.IsMultiple) {
                     criterion.Name = reference.KeyProperty.Name;
-                    criterion.Value = objs.Select(o => GetId(o));
+                    criterion.Value = objects.Select(o => GetId(o));
                 } else {
                     criterion.Name = GetPrimaryKeys(reference.ReferencedType).FirstOrDefault();
-                    criterion.Value = objs.Select(o => reference.KeyProperty.GetValue(o, null)).Where(id => id != null);
+                    criterion.Value = objects.Select(o => reference.KeyProperty.GetValue(o, null)).Where(id => id != null);
                 } // end if-else
                 results = ReflectedFind(reference.ReferencedType, new[] {criterion}, joinsForFind.ToArray()) as IEnumerable;
                 results.GetEnumerator(); // Forces fetching
