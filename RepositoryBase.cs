@@ -109,6 +109,14 @@ namespace XRepository {
 
 
 
+        protected virtual void InvokeFindCompleteInterceptors(IEnumerable<string> tableNames, IEnumerable<IRecord> records) {
+            foreach (var interceptor in Interceptors)
+                if (interceptor.IsMatch(tableNames))
+                    interceptor.InterceptFindComplete(tableNames, records);
+        } // end method
+
+
+
         protected virtual void InvokeFindInterceptors(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria) {
             foreach (var interceptor in Interceptors)
                 if (interceptor.IsMatch(tableNames))

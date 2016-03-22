@@ -284,9 +284,10 @@ namespace XRepository {
             cursorData.sort = sort;
 
             InvokeFindInterceptors(tableNames, cursorData.criteria);
-            var objects = new BlockingCollection<IRecord>();
-            Executor.Fetch(tableNames, cursorData, objects);
-            return CreateObjects<T>(objects, cursorData);
+            var records = new BlockingCollection<IRecord>();
+            Executor.Fetch(tableNames, cursorData, records);
+            InvokeFindCompleteInterceptors(tableNames, records);
+            return CreateObjects<T>(records, cursorData);
         } // end method
 
 

@@ -51,7 +51,6 @@
     <Compile Include="ConnectionInfo.cs" />
     <Compile Include="DatabaseInfoCache.cs" />
     <Compile Include="Executor.cs" />
-    <Compile Include="HandleAjaxError.cs" />
     <Compile Include="Interceptor.cs" />
     <Compile Include="RepositoryBase.cs" />
     <Compile Include="WebRepositoryAdapter.cs" />

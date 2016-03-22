@@ -105,10 +105,11 @@ namespace XRepository {
             InvokeFindInterceptors(tableNamesEnum, cursorData.criteria);
 
             var objectValuesList = new List<IRecord>();
-            var objects = new BlockingCollection<IRecord>();
-            Executor.Fetch(tableNamesEnum, cursorData, objects);
-            FixDates(objects);
-            return JsonConvert.SerializeObject(objects);
+            var records = new BlockingCollection<IRecord>();
+            Executor.Fetch(tableNamesEnum, cursorData, records);
+            FixDates(records);
+            InvokeFindCompleteInterceptors(tableNamesEnum, records);
+            return JsonConvert.SerializeObject(records);
         } // end method
 
 
