@@ -68,6 +68,10 @@
     <Compile Include="Sequencer.cs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\XTools.Mvc\XTools.Mvc.csproj">
+      <Project>{cd035154-d09a-4b87-bc37-50d81b702a5c}</Project>
+      <Name>XTools.Mvc</Name>
+    </ProjectReference>
     <ProjectReference Include="..\XTools\XTools.csproj">
       <Project>{3EEC986C-679B-4CFE-A858-C10A2BE88B3A}</Project>
       <Name>XTools</Name>

@@ -8,6 +8,7 @@ using System.Text;
 using System.Web.Mvc;
 using System.Web.Routing;
 using XTools;
+using XTools.Mvc;
 
 namespace XRepository {
     [HandleAjaxError]
