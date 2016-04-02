@@ -561,8 +561,7 @@ namespace XRepository {
 
                     // Stop iterating if the pagingMechanism is null or Programmatic,
                     // recordStop is defined, and recordNum is on or after recordStop.
-                    if ((pagingMechanism == null ||
-                        pagingMechanism == DatabaseExecutor.PagingMechanism.Programmatic) &&
+                    if (pagingMechanism == DatabaseExecutor.PagingMechanism.Programmatic &&
                         recordStop != null && recordNum >= recordStop)
                         break;
                 } // end if
