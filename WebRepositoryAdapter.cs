@@ -163,7 +163,7 @@ namespace XRepository {
                 var tableName = tableNameElement.Value<string>();
                 var tableDef = Executor.GetTableDefinition(tableName);
                 if (tableDef == null)
-                    throw new DataException("The table \"" + tableName + "\" is not a valid table.");
+                    throw new DataException(Executor.FormatInvalidTableMessage(tableName));
                 tableNames.Add(tableDef.FullName);
             } // end foreach
             return tableNames;
@@ -254,7 +254,7 @@ namespace XRepository {
                     var tableName = tableNameElement.Value<string>();
                     var tableDef = Executor.GetTableDefinition(tableName);
                     if (tableDef == null)
-                        throw new DataException("The table \"" + tableName + "\" is not a valid table.");
+                        throw new DataException(Executor.FormatInvalidTableMessage(tableName));
                     tableNamesList.Add(tableDef.FullName);
                 } // end foreach
             else

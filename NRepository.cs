@@ -549,7 +549,8 @@ namespace XRepository {
                     var tableDef = Executor.GetTableDefinition(type.Name);
                     if (tableDef != null)
                         tableNameList.Add(tableDef.FullName);
-                } catch (DataException) {
+                } catch (DataException ex) {
+                    Trace.WriteLine(ex.ToString());
                     // GetTableDefinition throws DataExceptions when the table
                     // indicated by type.Name does not exist.  In those cases,
                     // catch the exception and move on.  FindTableNames will
@@ -826,7 +827,7 @@ namespace XRepository {
             // GetTableDefinition should throw an exception, but since it can be
             // overridden, also check for returned null values.
             if (Executor.GetTableDefinition(tableName) == null)
-                throw new DataException("The table \"" + tableName + "\" is not a valid table.");
+                throw new DataException(Executor.FormatInvalidTableMessage(tableName));
 
             var info = infoCache[ConnectionString];
             var tableNames = new List<string>();

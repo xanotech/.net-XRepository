@@ -764,7 +764,7 @@ namespace XRepository {
                     throw;
             } // end try-catch
             if (tableDef == null)
-                throw new DataException("The table \"" + tableName + "\" is not a valid table.");
+                throw new DataException(FormatInvalidTableMessage(tableName));
             return tableDef;
         } // end method
 

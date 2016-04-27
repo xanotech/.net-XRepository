@@ -31,5 +31,21 @@ namespace XRepository {
         public abstract TableDefinition GetTableDefinition(string tableName);
         public abstract void Remove(BlockingCollection<IRecord> data);
         public abstract void Save(BlockingCollection<IRecord> data);
+
+
+
+        /// <summary>
+        ///   This method takes a tablename and returns a standard error message.
+        ///   It exists because the JavaScript version of XRepository uses the message
+        ///   to determine the nature of server-side errors, whether they are simply
+        ///   invalid tables or a more severe condition (like database taken over by
+        ///   a hostile AI).
+        /// </summary>
+        /// <param name="tableName">The name of the invalid table.</param>
+        /// <returns>an appropriate error message.</returns>
+        internal static string FormatInvalidTableMessage(string tableName) {
+            return "The table\"" + tableName + "\" is not a valid table.";
+        } // end method
+
     } // end class
 } // end namespace

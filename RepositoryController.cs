@@ -8,10 +8,8 @@ using System.Text;
 using System.Web.Mvc;
 using System.Web.Routing;
 using XTools;
-using XTools.Mvc;
 
 namespace XRepository {
-    [HandleAjaxError]
     public class RepositoryController : Controller {
 
         private static IDictionary<string, Func<IDbConnection>> connectionFuncs = new Dictionary<string, Func<IDbConnection>>();
@@ -75,7 +73,14 @@ namespace XRepository {
 
         protected override void Dispose(bool disposing) {
             base.Dispose(disposing);
-            Adapter.Dispose();
+
+            // Try to dispose the Adapter.  If it fails, just swallow the resulting
+            // exception because exceptions thrown from Dispose automatically
+            // lead to the Yellow Screen of Death.
+            try {
+                Adapter.Dispose();
+            } catch {
+            } // end try-catch
         } // end method
 
 
@@ -106,6 +111,35 @@ namespace XRepository {
 
         protected virtual ActionResult JsonContent(string jsonText) {
             return Content(jsonText, "application/json", Encoding.UTF8);
+        } // end method
+
+
+
+        protected override void OnException(ExceptionContext context) {
+            string message = "Unknown exception";
+            string stack = "No stack trace available";
+            
+            // Believe it or not, getting an exception's message or its
+            // ToString value can fail.  In those cases, just attempt
+            // to set the stack to the full name of the exception type
+            // and move on.  The exception itself is hosed so the type
+            // name is about all you'll be able to get out of it (if that).
+            try {
+                message = context.Exception.Message;
+                stack = context.Exception.ToString();
+            } catch {
+                try {
+                    stack = context.Exception.GetType().FullName;
+                } catch {
+                } // end try-catch
+            } // end try-catch
+
+            context.Result = new JsonResult {
+                Data = new { message = message, stack = stack },
+                JsonRequestBehavior = JsonRequestBehavior.AllowGet
+            };
+            context.ExceptionHandled = true;
+            context.RequestContext.HttpContext.Response.StatusCode = 500;
         } // end method
 
 
