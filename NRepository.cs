@@ -239,13 +239,13 @@ namespace XRepository {
             //if (tableNames.All(tn => GetSchemaTable(tn) == null))
             //    return null;
 
-            var keyProperty = FindReferenceKeyProperty(prefix, primaryType, foreignType);
-            if (keyProperty == null)
+            var foreignKey = FindForeignKeyProperty(prefix, primaryType, foreignType);
+            if (foreignKey == null)
                 return null;
 
             var reference = new Reference();
             reference.IsMultiple = isMultiple;
-            reference.KeyProperty = keyProperty;
+            reference.ForeignKeyProperty = foreignKey;
             reference.ValueProperty = property;
             reference.ReferencedType = referencedType;
             return reference;
@@ -375,11 +375,11 @@ namespace XRepository {
                 var criterion = new Criterion();
                 criterion.Operation = Criterion.OperationType.EqualTo;
                 if (reference.IsMultiple) {
-                    criterion.Name = reference.KeyProperty.Name;
+                    criterion.Name = reference.ForeignKeyProperty.Name;
                     criterion.Value = objects.Select(o => GetId(o));
                 } else {
                     criterion.Name = GetPrimaryKeys(reference.ReferencedType).FirstOrDefault();
-                    criterion.Value = objects.Select(o => reference.KeyProperty.GetValue(o, null)).Where(id => id != null);
+                    criterion.Value = objects.Select(o => reference.ForeignKeyProperty.GetValue(o, null)).Where(id => id != null);
                 } // end if-else
                 results = ReflectedFind(reference.ReferencedType, new[] {criterion}, joinsForFind.ToArray()) as IEnumerable;
                 results.GetEnumerator(); // Forces fetching
@@ -431,6 +431,30 @@ namespace XRepository {
 
 
 
+        private PropertyInfo FindForeignKeyProperty(string prefix, Type primaryType, Type foreignType) {
+            var keys = GetPrimaryKeys(primaryType);
+            if (keys.Count() != 1)
+                return null;
+
+            var tableNames = GetTableNames(primaryType);
+            var keyName = keys.First();
+            foreach (var name in tableNames)
+                keyName = keyName.RemoveIgnoreCase(name);
+            keyName = prefix + keyName;
+
+            var mirror = mirrorCache[foreignType];
+            var keyProp = mirror.GetProperty(keyName, CaseInsensitiveBinding);
+            if (keyProp == null) {
+                keyName = keys.First();
+                keys = GetPrimaryKeys(foreignType);
+                if (!(keys.Count() == 1 && keys.First().Is(keyName)))
+                    keyProp = mirror.GetProperty(keyName, CaseInsensitiveBinding);
+            } // end if
+            return keyProp;
+        } // end method
+
+
+
         private PropertyInfo FindIdProperty(Type type) {
             var keys = GetPrimaryKeys(type);
             if (keys.Count() != 1)
@@ -475,7 +499,7 @@ namespace XRepository {
             foreach (var obj in objs)
             foreach (var reference in references)
             if (reference.IsSingle) {
-                var id = reference.KeyProperty.GetValue(obj, null);
+                var id = reference.ForeignKeyProperty.GetValue(obj, null);
                 if (id == null)
                     continue;
 
@@ -500,30 +524,6 @@ namespace XRepository {
                 // Retrieves results (which loads them into idObjectMap)
                 (results as IEnumerable).GetEnumerator();
             } // end foreach
-        } // end method
-
-
-
-        private PropertyInfo FindReferenceKeyProperty(string prefix, Type primaryType, Type foreignType) {
-            var keys = GetPrimaryKeys(primaryType);
-            if (keys.Count() != 1)
-                return null;
-
-            var tableNames = GetTableNames(primaryType);
-            var keyName = keys.First();
-            foreach (var name in tableNames)
-                keyName = keyName.RemoveIgnoreCase(name);
-            keyName = prefix + keyName;
-
-            var mirror = mirrorCache[foreignType];
-            var keyProp = mirror.GetProperty(keyName, CaseInsensitiveBinding);
-            if (keyProp == null) {
-                keyName = keys.First();
-                keys = GetPrimaryKeys(foreignType);
-                if (!(keys.Count() == 1 && keys.First().Is(keyName)))
-                    keyProp = mirror.GetProperty(keyName, CaseInsensitiveBinding);
-            } // end if
-            return keyProp;
         } // end method
 
 
@@ -989,7 +989,7 @@ namespace XRepository {
 
 
         private void SetMultipleReferences(IEnumerable objs, IEnumerable<Reference> references) {
-            // This funky collection holds enumerables (ILists) keyed by Type and KeyProperty value == id
+            // This funky collection holds enumerables (ILists) keyed by Type and ForeignKeyProperty value == id
             var joinEnumerables = new Dictionary<Type, IDictionary<object, IList<object>>>();
 
             foreach (var obj in objs)
@@ -1002,7 +1002,7 @@ namespace XRepository {
                 if (joinObjectMap.ContainsKey(reference.ReferencedType)) {
                     if (!joinEnumerables.ContainsKey(reference.ReferencedType))
                         foreach (var joinObj in joinObjectMap[reference.ReferencedType].Values) {
-                            var keyValue = reference.KeyProperty.GetValue(joinObj, null);
+                            var keyValue = reference.ForeignKeyProperty.GetValue(joinObj, null);
                             if (!joinEnumerables.ContainsKey(reference.ReferencedType))
                                 joinEnumerables[reference.ReferencedType] = new Dictionary<object, IList<object>>();
                             if (!joinEnumerables[reference.ReferencedType].ContainsKey(keyValue))
@@ -1016,7 +1016,7 @@ namespace XRepository {
                     var enumerable = CastToTypedEnumerable(joinEnumerables[reference.ReferencedType][id], reference.ReferencedType);
                     reference.ValueProperty.SetValue(obj, enumerable, null);
                 } else if (IsReferenceAssignmentActive) {
-                    Criterion criterion = new Criterion(reference.KeyProperty.Name, "=", id);
+                    Criterion criterion = new Criterion(reference.ForeignKeyProperty.Name, "=", id);
                     var enumerable = CreateLazyLoadEnumerable(reference.ReferencedType, criterion, obj);
                     reference.ValueProperty.SetValue(obj, enumerable, null);
                 } // end if-else
@@ -1039,7 +1039,7 @@ namespace XRepository {
             foreach (var obj in objs)
             foreach (var reference in references)
             if (reference.IsSingle) {
-                var id = reference.KeyProperty.GetValue(obj, null);
+                var id = reference.ForeignKeyProperty.GetValue(obj, null);
                 if (id == null)
                     continue;
 

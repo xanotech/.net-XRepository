@@ -18,7 +18,7 @@ namespace XRepository {
 
 
 
-        internal PropertyInfo KeyProperty { get; set; }
+        internal PropertyInfo ForeignKeyProperty { get; set; }
         internal PropertyInfo ValueProperty { get; set; }
         internal Type ReferencedType { get; set; }
 
