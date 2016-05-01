@@ -1,11 +1,10 @@
-o Allow async toArray to be passed a callback as an alternative to .done (JS only)
-o Move "_private" methods to _internal object (JS only)
+o Add init method that prefetches all table information (JS only)
+o Modify JSON data interaction between server and client so that column names are only sent once
 o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
 o "ignore" functionality so that particular columns can be ignored (JS only)
 o Support operations by tablename only (no entities, just DTOs) (JS only)
 o Remove properties that are not Basic when saving
 o Ensure that objects passed to save or remove contain necessary primary keys
-o Make OleDbExecutor threadsafe
 o Finish .NET Getting Started documentation
 	- Criteria Logic: how to do AND and OR
 	- Interceptors
@@ -26,6 +25,7 @@ o Create a generic UserController based on wheresmylinks user code
 o Create a universal ajax / JavaScript error handler (that integrates with other tools) (does XApplication already do this?)
 o Extend NRepository for use over web (WebExecutor)
 o Create Java version of XRepository (JRepository)
+o Create PHP version of XRepository (PRepository)
 o Create Objective-C version of XRepository (iRepository)
 
 

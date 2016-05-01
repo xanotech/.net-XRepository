@@ -44,7 +44,7 @@ namespace XRepository {
         /// <param name="tableName">The name of the invalid table.</param>
         /// <returns>an appropriate error message.</returns>
         internal static string FormatInvalidTableMessage(string tableName) {
-            return "The table\"" + tableName + "\" is not a valid table.";
+            return "The table \"" + tableName + "\" is not a valid table.";
         } // end method
 
     } // end class
