@@ -28,12 +28,125 @@ namespace XRepository {
 
 
 
-        protected IRecord ApplyId(JObject jObj, string tableName, long id) {
+        protected IRecord ApplyId(IRecord record, string tableName, long id) {
             var key = Executor.GetPrimaryKeys(tableName).First();
-            jObj[key] = id;
+            record[key] = id;
             var idRecord = new Record(StringComparer.OrdinalIgnoreCase);
             idRecord[key] = id;
             return idRecord;
+        } // end method
+
+
+
+        protected IEnumerable<IEnumerable<object>> ConvertToLists(IEnumerable<IRecord> records) {
+            var lists = new List<IEnumerable<object>>();
+
+            // The first item in lists is the list of columns.  If there is
+            // a record, add the first record's keys as elements in the list.
+            var columns = new List<string>();
+            var firstRecord = records.FirstOrDefault();
+            if (firstRecord != null)
+                columns.AddRange(firstRecord.Keys);
+            lists.Add(columns);
+
+            // The initial columns arrays are separated from values arrays
+            // by an empty array.
+            lists.Add(new List<object>());
+
+            // Add all records' values to their own list in the same order as
+            // found in columns.
+            foreach (var record in records) {
+                var values = new List<object>();
+                // The first element in the values arrays indicate which
+                // columns to use.  Since ConvertToLists is really only
+                // ever used by Fetch, it's always 0 since Fetch can only
+                // return one object type (and since that type will have
+                // the same columns for all objects).
+                values.Add(0);
+                foreach (var column in columns)
+                    values.Add(record[column]);
+                lists.Add(values);
+            } // end foreach
+
+            return lists;
+        } // end method
+
+
+
+        protected IEnumerable<IEnumerable<object>> ConvertToLists(JToken array) {
+            if (array.Type != JTokenType.Array)
+                return null;
+
+            var lists = new List<IEnumerable<object>>();
+            foreach (var subArray in array) {
+                var list = new List<object>();
+                foreach (var element in subArray) {
+                    var jArray = element as JArray;
+                    if (jArray == null)
+                        list.Add((element as JValue).Value);
+                    else {
+                        var isAllStrings = true;
+                        var strings = new List<string>();
+                        var values = new List<object>();
+                        foreach (var jTok in jArray) {
+                            var value = (jTok as JValue).Value;
+                            values.Add(value);
+                            var str = value as string;
+                            if (value == null || str != null)
+                                strings.Add(str);
+                            else
+                                isAllStrings = false;
+                        } // end foreach
+
+                        if (isAllStrings)
+                            list.Add(strings);
+                        else
+                            list.Add(values);
+                    } // end if-else
+                } // end foreach
+                lists.Add(list);
+            } // end foreach
+            return lists;
+        } // end method
+
+
+
+        protected IEnumerable<IRecord> ConvertToRecords(IEnumerable<IEnumerable<object>> lists) {
+            var records = new List<IRecord>();
+
+            // The first one or more items in lists are represent column lists.
+            // Iterate over records until an empty list is encountered.  That
+            // empty list separates column lists from values lists.  Then,
+            // iterate over the rest of the lists converting them to records.
+            var isDoneWithColumns = false;
+            var columnsList = new List<IEnumerable<object>>();
+            foreach (var list in lists) {
+                if (isDoneWithColumns) {
+                    if (!list.Any())
+                        continue;
+
+                    // Iterate through all values of the list.  The first
+                    // value should indicate the columns list to use.
+                    var record = new Record(StringComparer.OrdinalIgnoreCase);
+                    IList<object> columns = null;
+                    var index = -1;
+                    foreach (var value in list) {
+                        if (columns == null)
+                            columns = columnsList[Convert.ToInt32(value)].ToList();
+                        else
+                            record[columns[index] as string] = value;
+                        index++;
+                    } // end foreach
+                    records.Add(record);
+                } else {
+                    if (list.Any())
+                        columnsList.Add(list);
+                    else
+                        isDoneWithColumns = true;
+                } // end
+            } // end foreach
+
+            return records;
         } // end method
 
 
@@ -105,11 +218,11 @@ namespace XRepository {
             InvokeFindInterceptors(tableNamesEnum, cursorData.criteria);
 
             var objectValuesList = new List<IRecord>();
-            var records = new BlockingCollection<IRecord>();
-            Executor.Fetch(tableNamesEnum, cursorData, records);
+            var records = Executor.Fetch(tableNamesEnum, cursorData);
             FixDates(records);
             InvokeFindCompleteInterceptors(tableNamesEnum, records);
-            return JsonConvert.SerializeObject(records);
+            var arrays = ConvertToLists(records);
+            return JsonConvert.SerializeObject(arrays);
         } // end method
 
 
@@ -156,7 +269,7 @@ namespace XRepository {
             if (jTok.Type != JTokenType.Array)
                 throw new FormatException("The _tableNames property was not an array (json = " +
                     jTok.ToString() + ").");
-            foreach (JToken tableNameElement in jTok) {
+            foreach (var tableNameElement in jTok) {
                 if (tableNameElement.Type != JTokenType.String)
                     throw new FormatException("The _tableNames property contained an " +
                         "element that was not a string (json = " + jTok.ToString() + ").");
@@ -178,7 +291,7 @@ namespace XRepository {
                     processedColumns[column.ToUpper()] = false;
 
             var values = new Record(StringComparer.OrdinalIgnoreCase);
-            foreach (KeyValuePair<string, JToken> property in jObj) {
+            foreach (var property in jObj) {
                 string propertyName = property.Key.ToUpper();
                 if (!processedColumns.ContainsKey(propertyName) || processedColumns[propertyName])
                     continue;
@@ -189,7 +302,7 @@ namespace XRepository {
                 else {
                     object[] array = new object[jArray.Count];
                     int a = 0;
-                    foreach (JToken jTok in jArray)
+                    foreach (var jTok in jArray)
                         array[a++] = (jTok as JValue).Value;
                     values[property.Key] = array;
                 } // end if-else
@@ -201,7 +314,7 @@ namespace XRepository {
 
 
 
-        protected bool IsIdNeeded(JObject jObj, string baseTableName) {
+        protected bool IsIdNeeded(IRecord record, string baseTableName) {
             if (Sequencer == null)
                 return false;
 
@@ -210,9 +323,7 @@ namespace XRepository {
                 return false;
             var key = keys.First();
 
-            JToken jTok;
-            return !jObj.TryGetValue(key, out jTok) ||
-                jTok.Type == JTokenType.Null || jTok.Type == JTokenType.Undefined;
+            return !record.ContainsKey(key) || record[key] == null;
         } // end method
 
 
@@ -265,13 +376,11 @@ namespace XRepository {
 
 
         public void Remove(string data) {
-            var records = new BlockingCollection<IRecord>();
-            var jObjList = CreateJObjectList(JToken.Parse(data));
-            foreach (var jObj in jObjList) {
-                var record = CreateDatabaseRecord(jObj);
+            var lists = ConvertToLists(JToken.Parse(data));
+            var records = ConvertToRecords(lists);
+            foreach (var record in records) {
                 var tableNames = record["_tableNames"] as IEnumerable<string>;
                 InvokeRemoveInterceptors(tableNames, record);
-                records.Add(record);
             } // end foreach
             Executor.Remove(records);
         } // end method
@@ -279,16 +388,19 @@ namespace XRepository {
 
 
         public string Save(string data) {
-            var jObjList = CreateJObjectList(JToken.Parse(data));
-            var baseTableNameIndex = new string[jObjList.Count];
-            var isIdNeededIndex = new bool[jObjList.Count];
+            var lists = ConvertToLists(JToken.Parse(data));
+            var records = ConvertToRecords(lists);
+            var count = records.Count();
+            var baseTableNameIndex = new string[count];
+            var isIdNeededIndex = new bool[count];
             var idsNeededByTableName = new Dictionary<string, int>();
             var index = 0;
-            foreach (var jObj in jObjList) {
-                var baseTableName = GetTableNames(jObj).First();
+            foreach (var record in records) {
+                var tableNames = record["_tableNames"] as IEnumerable<string>;
+                var baseTableName = tableNames.First();
                 baseTableNameIndex[index] = baseTableName;
 
-                var isIdNeeded = IsIdNeeded(jObj, baseTableName);
+                var isIdNeeded = IsIdNeeded(record, baseTableName);
                 isIdNeededIndex[index] = isIdNeeded;
                 if (isIdNeeded) {
                     if (!idsNeededByTableName.ContainsKey(baseTableName))
@@ -305,22 +417,19 @@ namespace XRepository {
                     Executor.GetPrimaryKeys(tableName).First(), idsNeededByTableName[tableName]);
 
             var idRecords = new List<IRecord>();
-            var records = new BlockingCollection<IRecord>();
             index = 0;
-            foreach (JObject jObj in jObjList) {
+            foreach (var record in records) {
                 IRecord idRecord = null;
                 if (isIdNeededIndex[index]) {
                     var baseTableName = baseTableNameIndex[index];
                     var id = idMap[baseTableName];
-                    idRecord = ApplyId(jObj, baseTableName, id);
+                    idRecord = ApplyId(record, baseTableName, id);
                     idMap[baseTableName]++;
                 } // end if
                 idRecords.Add(idRecord);
 
-                var record = CreateDatabaseRecord(jObj);
                 var tableNames = record["_tableNames"] as IEnumerable<string>;
                 InvokeSaveInterceptors(tableNames, record);
-                records.Add(record);
                 index++;
             } // end foreach
             Executor.Save(records);

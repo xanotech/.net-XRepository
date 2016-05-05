@@ -24,13 +24,12 @@ namespace XRepository {
 
         public abstract long Count(IEnumerable<string> tableNames, IEnumerable<Criterion> criteria);
         public abstract void Dispose();
-        public abstract void Fetch(IEnumerable<string> tableNames, CursorData cursorData,
-            BlockingCollection<IRecord> results);
+        public abstract IEnumerable<IRecord> Fetch(IEnumerable<string> tableNames, CursorData cursorData);
         public abstract IEnumerable<string> GetColumns(string tableName);
         public abstract IEnumerable<string> GetPrimaryKeys(string tableName);
         public abstract TableDefinition GetTableDefinition(string tableName);
-        public abstract void Remove(BlockingCollection<IRecord> data);
-        public abstract void Save(BlockingCollection<IRecord> data);
+        public abstract void Remove(IEnumerable<IRecord> data);
+        public abstract void Save(IEnumerable<IRecord> data);
 
 
 

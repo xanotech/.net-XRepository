@@ -284,8 +284,7 @@ namespace XRepository {
             cursorData.sort = sort;
 
             InvokeFindInterceptors(tableNames, cursorData.criteria);
-            var records = new BlockingCollection<IRecord>();
-            Executor.Fetch(tableNames, cursorData, records);
+            var records = Executor.Fetch(tableNames, cursorData);
             InvokeFindCompleteInterceptors(tableNames, records);
             return CreateObjects<T>(records, cursorData);
         } // end method
@@ -911,7 +910,7 @@ namespace XRepository {
 
         protected virtual void RemoveRange(IEnumerable enumerable) {
             try {
-                var records = new BlockingCollection<IRecord>();
+                var records = new List<IRecord>();
                 foreach (var obj in enumerable) {
                     var record = CreateDatabaseRecord(obj);
                     var tableNames = record["_tableNames"] as IEnumerable<string>;
@@ -962,7 +961,7 @@ namespace XRepository {
                     idMap[tableName] = Sequencer.GetNextValues(tableName,
                         Executor.GetPrimaryKeys(tableName).First(), idsNeededByTableName[tableName]);
 
-                var records = new BlockingCollection<IRecord>();
+                var records = new List<IRecord>();
                 index = 0;
                 foreach (var obj in enumerable) {
                     if (isIdNeededIndex[index]) {

@@ -380,9 +380,10 @@ namespace XRepository {
 
 
 
-        private IDbCommand CreateDeleteCommand(string table, IEnumerable<Criterion> criteria) {
+        private IDbCommand CreateDeleteCommand(string table, IEnumerable<Criterion> criteria, IDbTransaction transaction) {
             var cmd = Connection.CreateCommand();
             try {
+                cmd.Transaction = transaction;
                 cmd.CommandText = "DELETE FROM " + table;
                 AddWhereClause(cmd, new[] { table }, criteria);
                 LogCommand(cmd);
@@ -397,9 +398,12 @@ namespace XRepository {
 
 
 
-        private IDbCommand CreateInsertCommand(string table, IRecord record) {
+        private IDbCommand CreateInsertCommand(string table, IRecord record,
+            IDbTransaction transaction = null) {
             var cmd = Connection.CreateCommand();
             try {
+                cmd.Transaction = transaction;
+
                 var sql = new StringBuilder("INSERT INTO " + table + Environment.NewLine + "(");
                 var valueString = new StringBuilder();
                 bool isAfterFirst = false;
@@ -437,7 +441,7 @@ namespace XRepository {
 
 
         private IDbCommand CreateSelectCommand(IEnumerable<string> tableNames,
-            CursorData cursorData, bool countOnly) {
+            CursorData cursorData, bool countOnly, IDbTransaction transaction = null) {
             if (!tableNames.Any())
                 throw new ArgumentException("The tableNames parameter was empty.", "tableNames");
 
@@ -445,6 +449,8 @@ namespace XRepository {
 
             var cmd = Connection.CreateCommand();
             try {
+                cmd.Transaction = transaction;
+
                 AddSelectClause(cmd, tableNames, countOnly, cursorData.columns);
                 AddFromClause(cmd, tableNames);
                 AddWhereClause(cmd, tableNames, cursorData.criteria);
@@ -482,11 +488,13 @@ namespace XRepository {
 
 
 
-        private IDbCommand CreateUpdateCommand(string table,
-            IRecord record, IEnumerable<Criterion> criteria) {
+        private IDbCommand CreateUpdateCommand(string table, IRecord record,
+            IEnumerable<Criterion> criteria, IDbTransaction transaction = null) {
 
             var cmd = Connection.CreateCommand();
             try {
+                cmd.Transaction = transaction;
+
                 var sql = new StringBuilder("UPDATE " + table + " SET" + Environment.NewLine);
 
                 var primaryKeyColumns = criteria.Select(c => c.Name.ToUpper());
@@ -540,9 +548,9 @@ namespace XRepository {
 
 
 
-        public override void Fetch(IEnumerable<string> tableNames, CursorData cursorData,
-            BlockingCollection<IRecord> records) {
+        public override IEnumerable<IRecord> Fetch(IEnumerable<string> tableNames, CursorData cursorData) {
             var pagingMechanism = GetPagingMechanism(tableNames.First());
+            var records = new List<IRecord>();
             var recordNum = 0;
             var recordStart = cursorData.skip ?? 0;
             var recordStop = cursorData.limit != null ? recordStart + cursorData.limit : null;
@@ -566,6 +574,8 @@ namespace XRepository {
                         break;
                 } // end if
             } // end foreach
+
+            return records;
         } // end method
 
 
@@ -926,8 +936,8 @@ namespace XRepository {
 
 
 
-        private IDbCommand GetMappedCommand(IDictionary<string, IDbCommand> commandMap, IEnumerable<string> tableNames,
-            IRecord record, IDbTransaction transaction, Func<IDbCommand> createCmdFunc) {
+        private IDbCommand GetMappedCommand(IDictionary<string, IDbCommand> commandMap,
+            IEnumerable<string> tableNames, IRecord record, Func<IDbCommand> createCmdFunc) {
             IDbCommand cmd;
             var tableNamesKey = string.Join("+", tableNames);
             if (commandMap.ContainsKey(tableNamesKey)) {
@@ -940,8 +950,6 @@ namespace XRepository {
                 LogCommand(cmd);
             } else {
                 cmd = createCmdFunc();
-                if (transaction != null)
-                    cmd.Transaction = transaction;
                 cmd.Prepare();
                 commandMap[tableNamesKey] = cmd;
             } // end if-else
@@ -1090,7 +1098,7 @@ namespace XRepository {
 
 
 
-        public override void Remove(BlockingCollection<IRecord> records) {
+        public override void Remove(IEnumerable<IRecord> records) {
             FixBools(records);
 
             AttemptTransaction(transaction => {
@@ -1117,11 +1125,11 @@ namespace XRepository {
                             // in the cmdMap, create it, prepare it, and add it.  If the cmd
                             // does exist, change the parameters to the object's keys.
                             if (criteria.HasNullValue())
-                                using (var cmd = CreateDeleteCommand(tableName, criteria))
+                                using (var cmd = CreateDeleteCommand(tableName, criteria, transaction))
                                     cmd.ExecuteNonQuery();
                             else {
-                                var cmd = GetMappedCommand(cmdMap, new[] {tableName}, criteria.ToDictionary(), transaction,
-                                    () => { return CreateDeleteCommand(tableName, criteria); });
+                                var cmd = GetMappedCommand(cmdMap, new[] {tableName}, criteria.ToDictionary(),
+                                    () => { return CreateDeleteCommand(tableName, criteria, transaction); });
                                 cmd.ExecuteNonQuery();
                             } // end if-else
                         } // end foreach
@@ -1135,7 +1143,7 @@ namespace XRepository {
 
 
 
-        public override void Save(BlockingCollection<IRecord> records) {
+        public override void Save(IEnumerable<IRecord> records) {
             FixBools(records);
 
             // Used for storing prepared statements to be used repeatedly
@@ -1165,25 +1173,25 @@ namespace XRepository {
                             var cursorData = new CursorData();
                             cursorData.criteria = criteria;
                             if (criteria.HasNullValue()) {
-                                using (var cmd = CreateSelectCommand(tableNames, cursorData, true))
+                                using (var cmd = CreateSelectCommand(tableNames, cursorData, true, transaction))
                                     result = cmd.ExecuteScalar();
                                 count = DataTool.AsLong(result) ?? 0;
                                 using (var cmd = count == 0 ?
-                                    CreateInsertCommand(tableName, record) :
-                                    CreateUpdateCommand(tableName, record, criteria))
+                                    CreateInsertCommand(tableName, record, transaction) :
+                                    CreateUpdateCommand(tableName, record, criteria, transaction))
                                     cmd.ExecuteNonQuery();
                             } else {
-                                IDbCommand cmd = GetMappedCommand(countCmdMap, tableNames, criteria.ToDictionary(), transaction,
-                                    () => { return CreateSelectCommand(tableNames, cursorData, true); });
+                                IDbCommand cmd = GetMappedCommand(countCmdMap, tableNames, criteria.ToDictionary(),
+                                    () => { return CreateSelectCommand(tableNames, cursorData, true, transaction); });
                                 result = cmd.ExecuteScalar();
                                 count = DataTool.AsLong(result) ?? 0;
 
                                 if (count == 0)
-                                    cmd = GetMappedCommand(insertCmdMap, new[] {tableName}, criteriaAndValues, transaction,
-                                        () => { return CreateInsertCommand(tableName, record); });
+                                    cmd = GetMappedCommand(insertCmdMap, new[] {tableName}, criteriaAndValues,
+                                        () => { return CreateInsertCommand(tableName, record, transaction); });
                                 else
-                                    cmd = GetMappedCommand(updateCmdMap, new[] {tableName}, criteriaAndValues, transaction,
-                                        () => { return CreateUpdateCommand(tableName, record, criteria); });
+                                    cmd = GetMappedCommand(updateCmdMap, new[] {tableName}, criteriaAndValues,
+                                        () => { return CreateUpdateCommand(tableName, record, criteria, transaction); });
                                 cmd.ExecuteNonQuery();
                             } // end if-else
                         } // end foreach

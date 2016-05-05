@@ -1,9 +1,7 @@
-o Add init method that prefetches all table information (JS only)
-o Modify JSON data interaction between server and client so that column names are only sent once
-o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
 o "ignore" functionality so that particular columns can be ignored (JS only)
+o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
 o Support operations by tablename only (no entities, just DTOs) (JS only)
-o Remove properties that are not Basic when saving
+o Remove properties that are not Basic when saving (JS only)
 o Ensure that objects passed to save or remove contain necessary primary keys
 o Finish .NET Getting Started documentation
 	- Criteria Logic: how to do AND and OR
