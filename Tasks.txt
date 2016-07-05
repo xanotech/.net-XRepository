@@ -1,4 +1,12 @@
 o Support identity inserts
+    - SqlServer / MSAccess (select scope_identity())
+	- MSAccess (select @@Identity)
+	- MySql (SELECT LAST_INSERT_ID())
+	- DB2 (SELECT IDENTITY_VAL_LOCAL() FROM SYSIBM.SYSDUMMY1)
+	- Oracle (http://stackoverflow.com/questions/28472118/returning-the-value-of-identity-column-after-insertion-in-oracle)
+	- PostgreSql (SELECT LASTVAL();)
+	- Sqlite (SELECT last_insert_rowid())
+	- SqlServerCompact (select @@Identity)
 o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
 o Support operations by tablename only (no entities, just DTOs) (JS only)
 o Remove properties that are not Basic when saving (JS only)

@@ -936,6 +936,15 @@ namespace XRepository {
 
         protected virtual void SaveRange(IEnumerable enumerable) {
             try {
+                // Aside from saving the objects in the enumerable, the rest
+                // of the code deals with assigning ids to the objects.  The
+                // first loop populates baseTableNameIndex and isIdNeededIndex.
+                // The baseTableNameIndex array holds the base table names for
+                // each object.  The isIdNeededIndex holds a flag indicating
+                // whether the object needs a id from Sequencer.  Moreover,
+                // the first loop also populates idsNeededByTableName, which
+                // stores the total number of id values to be obtained from
+                // Sequencer.
                 var count = enumerable.Count();
                 var baseTableNameIndex = new string[count];
                 var isIdNeededIndex = new bool[count];
@@ -956,11 +965,18 @@ namespace XRepository {
                     index++;
                 } // end foreach
 
+                // The next loop populates idMap, which maps table names to
+                // the next id to be applied to an object which needs one.
+                // Sequencer only returns the first id requested but ensures
+                // uniqueness across calls (3rd parameter and the reason
+                // for idsNeededByTableName).
                 var idMap = new Dictionary<string, long>();
                 foreach (var tableName in idsNeededByTableName.Keys)
                     idMap[tableName] = Sequencer.GetNextValues(tableName,
                         Executor.GetPrimaryKeys(tableName).First(), idsNeededByTableName[tableName]);
 
+                // The final loop translates objects into IRecords and assigns
+                // id values from idMap to those objects that need one.
                 var records = new List<IRecord>();
                 index = 0;
                 foreach (var obj in enumerable) {
