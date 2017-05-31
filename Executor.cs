@@ -26,6 +26,7 @@ namespace XRepository {
         public abstract void Dispose();
         public abstract IEnumerable<IRecord> Fetch(IEnumerable<string> tableNames, CursorData cursorData);
         public abstract IEnumerable<string> GetColumns(string tableName);
+        public abstract string GetIdentityColumn(string tableName);
         public abstract IEnumerable<string> GetPrimaryKeys(string tableName);
         public abstract TableDefinition GetTableDefinition(string tableName);
         public abstract void Remove(IEnumerable<IRecord> data);

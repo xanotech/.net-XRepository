@@ -710,8 +710,12 @@ namespace XRepository {
 
             PropertyInfo idProperty;
             var id = GetIntId(obj, out idProperty);
+            if (idProperty == null)
+                return false;
 
-            return idProperty != null &&
+            var identityColumn = Executor.GetIdentityColumn(baseTableName);
+            var idColumn = GetMappedColumn(obj.GetType(), idProperty.Name);
+            return !identityColumn.Is(idColumn) &&
                 (id == null || (id == 0 && !idProperty.PropertyType.IsNullable()));
         } // end method
 

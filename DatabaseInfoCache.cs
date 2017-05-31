@@ -13,6 +13,7 @@ namespace XRepository {
         internal Sequencer sequencer;
 
         internal Cache<string, IEnumerable<string>> columnsCache = new Cache<string, IEnumerable<string>>();
+        internal Cache<string, string> identityColumnsCache = new Cache<string, string>();
         internal Cache<string, IEnumerable<string>> primaryKeysCache = new Cache<string, IEnumerable<string>>();
         internal Cache<string, DataTable> schemaTableCache = new Cache<string, DataTable>();
         internal Cache<string, TableDefinition> tableDefinitionCache = new Cache<string, TableDefinition>();

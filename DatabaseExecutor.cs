@@ -590,6 +590,20 @@ namespace XRepository {
 
 
 
+        private string FindIdentityColumn(string tableName) {
+            var schema = GetSchemaTable(tableName);
+            for (int r = 0; r < schema.Rows.Count; r++) {
+                var isIdentity = schema.Rows[r]["IsIdentity"] as bool?;
+                var isAutoIncrement = schema.Rows[r]["IsAutoIncrement"] as bool?;
+                if ((isIdentity != null && isIdentity.Value) ||
+                    (isAutoIncrement != null && isAutoIncrement.Value))
+                    return schema.Rows[r]["ColumnName"] as string;
+            } // end for
+            return null;
+        } // end method
+
+
+
         private PagingMechanism FindPagingMechanism(string tableName) {
             // Try LimitOffset
             var sql = "SELECT NULL FROM " + tableName + " LIMIT 1 OFFSET 0";
@@ -936,6 +950,16 @@ namespace XRepository {
 
 
 
+        public override string GetIdentityColumn(string tableName) {
+            if (tableName == null)
+                throw new ArgumentNullException("tableName", "The tableName parameter was null.");
+
+            var info = infoCache[ConnectionString];
+            return info.identityColumnsCache.GetValue(tableName.ToUpper(), FindIdentityColumn);
+        } // end method
+
+
+
         private IDbCommand GetMappedCommand(IDictionary<string, IDbCommand> commandMap,
             IEnumerable<string> tableNames, IRecord record, Func<IDbCommand> createCmdFunc) {
             IDbCommand cmd;
@@ -1159,6 +1183,35 @@ namespace XRepository {
                                 "or not defined as IEnumerable<string> in one or more of the records passed.");
                         foreach (var tableName in tableNames) {
                             var criteria = GetPrimaryKeyCriteria(record, tableName);
+                            long? count = null; // Used to determine if the save is an insert or update.
+
+                            // If an identity column exists, then that column cannot
+                            // "participate" in an insert or update.  The following
+                            // code checks for the presence of an identity column.
+                            // If it exists it is removed from record.  Also,
+                            // if it exists and is null, then the idColumnIsNull
+                            // flag is set to true (used later for determining
+                            // whether or not to pull the identity value after an
+                            // insert).
+                            var idColumn = GetIdentityColumn(tableName);
+                            var idColumnIsNull = false;
+                            if (idColumn != null) {
+                                idColumnIsNull = record[idColumn] == null;
+                                record.Remove(idColumn);
+                            } // end if
+
+                            // If criteria contains a criterion for an idColumn, then an
+                            // identity insert must be performed.  The insert query
+                            // can contain no trace of the column so that the database
+                            // generates a value.  The criterion must be removed from
+                            // the criteria and count must be set to 0 to force an insert
+                            // (since we'll know an insert is required).
+                            var idCriterion = criteria.FirstOrDefault(c => c.Name.Is(idColumn));
+                            if (idCriterion != null && idCriterion.Value == null) {
+                                count = 0;
+                                criteria = criteria.Except(new[] {idCriterion});
+                            } // end if
+
                             var criteriaAndValues = new Record(record);
                             criteriaAndValues.AddRange(criteria.ToDictionary());
 
@@ -1169,22 +1222,27 @@ namespace XRepository {
                             // in the cmdMap, create it, prepare it, and add it.  If the cmd
                             // does exist, change the parameters to the object's keys.
                             object result;
-                            long? count;
                             var cursorData = new CursorData();
                             cursorData.criteria = criteria;
                             if (criteria.HasNullValue()) {
-                                using (var cmd = CreateSelectCommand(tableNames, cursorData, true, transaction))
-                                    result = cmd.ExecuteScalar();
-                                count = DataTool.AsLong(result) ?? 0;
+                                if (count == null) {
+                                    using (var cmd = CreateSelectCommand(tableNames, cursorData, true, transaction))
+                                        result = cmd.ExecuteScalar();
+                                    count = DataTool.AsLong(result) ?? 0;
+                                } // end if
+
                                 using (var cmd = count == 0 ?
                                     CreateInsertCommand(tableName, record, transaction) :
                                     CreateUpdateCommand(tableName, record, criteria, transaction))
                                     cmd.ExecuteNonQuery();
                             } else {
-                                IDbCommand cmd = GetMappedCommand(countCmdMap, tableNames, criteria.ToDictionary(),
-                                    () => { return CreateSelectCommand(tableNames, cursorData, true, transaction); });
-                                result = cmd.ExecuteScalar();
-                                count = DataTool.AsLong(result) ?? 0;
+                                IDbCommand cmd = null;
+                                if (count == null) {
+                                    cmd = GetMappedCommand(countCmdMap, tableNames, criteria.ToDictionary(),
+                                        () => { return CreateSelectCommand(tableNames, cursorData, true, transaction); });
+                                    result = cmd.ExecuteScalar();
+                                    count = DataTool.AsLong(result) ?? 0;
+                                } // end if
 
                                 if (count == 0)
                                     cmd = GetMappedCommand(insertCmdMap, new[] {tableName}, criteriaAndValues,
@@ -1194,6 +1252,9 @@ namespace XRepository {
                                         () => { return CreateUpdateCommand(tableName, record, criteria, transaction); });
                                 cmd.ExecuteNonQuery();
                             } // end if-else
+
+                            //if (idColumnIsNull)
+                            //    select identity and set its value record obj
                         } // end foreach
                     } // end foreach
                 });

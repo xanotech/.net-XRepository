@@ -7,6 +7,7 @@ o Support identity inserts
 	- PostgreSql (SELECT LASTVAL();)
 	- Sqlite (SELECT last_insert_rowid())
 	- SqlServerCompact (select @@Identity)
+o Test Identity columns with inheritance
 o Support "funky" and "decorated" table names / column names with mapXyz methods (N and JS)
 o Support operations by tablename only (no entities, just DTOs) (JS only)
 o Remove properties that are not Basic when saving (JS only)
