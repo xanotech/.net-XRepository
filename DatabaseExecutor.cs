@@ -247,8 +247,9 @@ namespace XRepository {
                 return;
 
             var typeName = con.GetType().FullName;
-            // TODO: Put in Oracle's max, which is 1000
-            if (typeName == "System.Data.SqlClient.SqlConnection")
+            if (typeName == "Oracle.ManagedDataAccess.Client.OracleConnection")
+                MaxParameters = 1000;
+            else if (typeName == "System.Data.SqlClient.SqlConnection")
                 MaxParameters = 2090;
             else if (typeName == "System.Data.SQLite.SQLiteConnection")
                 MaxParameters = 999;

@@ -47,10 +47,11 @@ namespace XRepository {
 
 
         internal Criterion GetLargestCollectionCriterion(ref int maxParameters) {
-            if (maxParameters == default(int))
-                maxParameters = 500;
             if (criteria == null)
                 return null;
+
+            if (maxParameters == default(int))
+                maxParameters = int.MaxValue;
 
             var total = 0;
             Criterion largestCollectionCriterion = null;
